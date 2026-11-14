@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mars Excursion Planner — Design Preview</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles/tokens.css">
+  <link rel="stylesheet" href="styles/components.css">
+  <style>
+    /* Preview-specific styles */
+    .preview-container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: var(--space-8);
+    }
+    .preview-section {
+      margin-bottom: var(--space-12);
+      padding: var(--space-6);
+      background: var(--color-panel);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-lg);
+    }
+    .preview-section h2 {
+      margin: 0 0 var(--space-2);
+      font-size: var(--text-xl);
+      font-weight: var(--font-weight-semibold);
+      color: var(--color-text-primary);
+    }
+    .preview-section p {
+      margin: 0 0 var(--space-6);
+      font-size: var(--text-sm);
+      color: var(--color-text-secondary);
+    }
+    .preview-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: var(--space-4);
+    }
+    .preview-card {
+      padding: var(--space-4);
+      background: var(--color-bg-elevated);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-md);
+    }
+    .preview-card h3 {
+      margin: 0 0 var(--space-3);
+      font-size: var(--text-sm);
+      font-weight: var(--font-weight-semibold);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--color-text-muted);
+    }
+    .preview-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-3);
+      align-items: center;
+    }
+    .preview-col {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-2);
+    }
+    .code-ref {
+      font-family: var(--font-mono);
+      font-size: var(--text-xs);
+      color: var(--color-text-muted);
+      background: var(--color-bg);
+      padding: var(--space-1) var(--space-2);
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--color-border-subtle);
+    }
+  </style>
+</head>
+<body>
+  <div class="preview-container">
+    <header style="margin-bottom: var(--space-8); padding-bottom: var(--space-6); border-bottom: 1px solid var(--color-border);">
+      <h1 style="margin: 0 0 var(--space-2); font-size: var(--text-2xl); font-weight: var(--font-weight-bold);">Mars Excursion Planner — Design System</h1>
+      <p style="margin: 0; color: var(--color-text-secondary);">NASA Space Apps Challenge — Reference implementation for design tokens, layout, and components</p>
+    </header>
+
+    <!-- TOKENS -->
+    <section class="preview-section">
+      <h2>Color Tokens</h2>
+      <p>Base, accent, rock types (colorblind-safe), status, and confidence colors</p>
+      <div class="preview-grid">
+        <div class="preview-card">
+          <h3>Base & Accent</h3>
+          <div class="preview-row">
+            <div style="width:60px;height:40px;background:var(--color-bg);border:1px solid var(--color-border);border-radius:var(--radius-sm);"></div>
+            <div class="preview-col">
+              <span class="code-ref">--color-bg #0B0D10</span>
+              <span class="code-ref">--color-panel #14181D</span>
+              <span class="code-ref">--color-border #2A313A</span>
+            </div>
+          </div>
+          <div class="preview-row" style="margin-top:var(--space-3);">
+            <div style="width:60px;height:40px;background:var(--color-accent);border-radius:var(--radius-sm);"></div>
+            <div class="preview-col">
+              <span class="code-ref">--color-accent #E8743B</span>
+            </div>
+          </div>
+        </div>
+        <div class="preview-card">
+          <h3>Rock Types (Colorblind-Safe)</h3>
+          <div class="preview-col">
+            <div class="preview-row">
+              <span class="marker marker-clay" style="margin-right:var(--space-2);"></span>
+              <div class="preview-col">
+                <span class="code-ref">--color-clay #2BB3A3 (teal)</span>
+                <span class="code-ref">Shape: Circle</span>
+              </div>
+            </div>
+            <div class="preview-row">
+              <span class="marker marker-sulfate" style="margin-right:var(--space-2);"></span>
+              <div class="preview-col">
+                <span class="code-ref">--color-sulfate #F2B134 (amber)</span>
+                <span class="code-ref">Shape: Triangle</span>
+              </div>
+            </div>
+            <div class="preview-row">
+              <span class="marker marker-silica" style="margin-right:var(--space-2);"></span>
+              <div class="preview-col">
+                <span class="code-ref">--color-silica #9B7FE8 (violet)</span>
+                <span class="code-ref">Shape: Diamond</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="preview-card">
+          <h3>Status (Semantic)</h3>
+          <div class="preview-col">
+            <div class="preview-row">
+              <span class="chip chip-go"><span class="chip-dot"></span>GO</span>
+              <span class="code-ref">--color-go #2BB3A3</span>
+            </div>
+            <div class="preview-row">
+              <span class="chip chip-caution"><span class="chip-dot"></span>CAUTION</span>
+              <span class="code-ref">--color-caution #F2B134</span>
+            </div>
+            <div class="preview-row">
+              <span class="chip chip-stop"><span class="chip-dot"></span>STOP</span>
+              <span class="code-ref">--color-hazard #E5484D</span>
+            </div>
+          </div>
+        </div>
+        <div class="preview-card">
+          <h3>Confidence Badges</h3>
+          <div class="preview-col">
+            <div class="preview-row">
+              <span class="badge badge-measured">Measured</span>
+              <span class="code-ref">Solid border</span>
+            </div>
+            <div class="preview-row">
+              <span class="badge badge-estimated">Estimated</span>
+              <span class="code-ref">Dashed border</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TYPOGRAPHY -->
+    <section class="preview-section">
+      <h2>Typography</h2>
+      <p>Inter for UI, JetBrains Mono for numbers/data, small uppercase labels</p>
+      <div class="preview-grid">
+        <div class="preview-card">
+          <h3>UI Font (Inter)</h3>
+          <p style="font-family: var(--font-ui); font-size: var(--text-xl); margin: 0 0 var(--space-1);">Heading XL — Mission Title</p>
+          <p style="font-family: var(--font-ui); font-size: var(--text-lg); margin: 0 0 var(--space-1);">Heading LG — Section Title</p>
+          <p style="font-family: var(--font-ui); font-size: var(--text-base); margin: 0 0 var(--space-1);">Body — Primary text content</p>
+          <p style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-secondary); margin: 0 0 var(--space-1);">Small — Secondary info</p>
+          <p style="font-family: var(--font-label); font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.08em; color: var(--color-text-muted); margin: 0;">Label — UI labels, uppercase</p>
+        </div>
+        <div class="preview-card">
+          <h3>Mono Font (JetBrains Mono)</h3>
+          <p style="font-family: var(--font-mono); font-size: var(--text-xl); font-weight: var(--font-weight-semibold); margin: 0 0 var(--space-1);">1,234.56</p>
+          <p style="font-family: var(--font-mono); font-size: var(--text-lg); font-weight: var(--font-weight-medium); margin: 0 0 var(--space-1);">ELEV: -4,212 m</p>
+          <p style="font-family: var(--font-mono); font-size: var(--text-base); margin: 0 0 var(--space-1);">DIST: 12.4 km</p>
+          <p style="font-family: var(--font-mono); font-size: var(--text-sm); color: var(--color-text-secondary); margin: 0;">BEARING: 247°</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- BUTTONS -->
+    <section class="preview-section">
+      <h2>Buttons</h2>
+      <p>Primary, secondary, ghost, danger variants with sizes</p>
+      <div class="preview-card">
+        <div class="preview-row" style="flex-wrap: wrap; gap: var(--space-3);">
+          <button class="btn btn-primary">Primary</button>
+          <button class="btn btn-secondary">Secondary</button>
+          <button class="btn btn-ghost">Ghost</button>
+          <button class="btn btn-danger">Danger</button>
+        </div>
+        <div class="preview-row" style="margin-top:var(--space-3); flex-wrap: wrap; gap: var(--space-3);">
+          <button class="btn btn-primary btn-sm">Small</button>
+          <button class="btn btn-primary">Default</button>
+          <button class="btn btn-primary btn-lg">Large</button>
+        </div>
+        <div class="preview-row" style="margin-top:var(--space-3); flex-wrap: wrap; gap: var(--space-3);">
+          <button class="btn btn-primary" disabled>Disabled</button>
+          <button class="btn btn-icon btn-secondary" aria-label="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
+        </div>
+      </div>
+    </section>
+
+    <!-- TOGGLE SWITCHES -->
+    <section class="preview-section">
+      <h2>Toggle Switches (Layer Controls)</h2>
+      <p>Used in left rail for layer visibility</p>
+      <div class="preview-card">
+        <div class="preview-col">
+          <label class="toggle">
+            <input type="checkbox" checked>
+            <span class="toggle-track"></span>
+            <span class="toggle-label">Elevation Contours<span class="toggle-subtitle">10m intervals</span></span>
+          </label>
+          <label class="toggle">
+            <input type="checkbox">
+            <span class="toggle-track"></span>
+            <span class="toggle-label">Slope Heatmap<span class="toggle-subtitle">Risk zones</span></span>
+          </label>
+          <label class="toggle">
+            <input type="checkbox" checked>
+            <span class="toggle-track"></span>
+            <span class="toggle-label">Traverse Path<span class="toggle-subtitle">Planned route</span></span>
+          </label>
+          <label class="toggle">
+            <input type="checkbox" disabled>
+            <span class="toggle-track"></span>
+            <span class="toggle-label">Orbital Imagery<span class="toggle-subtitle">Unavailable</span></span>
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <!-- LEGEND -->
+    <section class="preview-section">
+      <h2>Legend</h2>
+      <p>Rock type markers with distinct shapes + confidence</p>
+      <div class="preview-card">
+        <div class="legend">
+          <div class="legend-group">
+            <span class="legend-group-title">Rock Chemistry</span>
+            <div class="legend-item"><span class="marker marker-clay"></span>Clay-bearing (phyllosilicates)</div>
+            <div class="legend-item"><span class="marker marker-sulfate"></span>Sulfate-rich (evaporites)</div>
+            <div class="legend-item"><span class="marker marker-silica"></span>Silica-rich (opaline)</div>
+          </div>
+          <div class="legend-group">
+            <span class="legend-group-title">Data Confidence</span>
+            <div class="legend-item"><span class="badge badge-measured" style="font-size: var(--text-xs);">Measured</span> Direct spectral detection</div>
+            <div class="legend-item"><span class="badge badge-estimated" style="font-size: var(--text-xs);">Estimated</span> Inferred from context</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ROCK TYPE MARKERS -->
+    <section class="preview-section">
+      <h2>Rock Type Markers</h2>
+      <p>Distinct shapes per type — not color-only. Three sizes for map zoom levels</p>
+      <div class="preview-grid">
+        <div class="preview-card">
+          <h3>Default (Map)</h3>
+          <div class="preview-row" style="gap: var(--space-6);">
+            <span class="marker marker-clay" title="Clay"></span>
+            <span class="marker marker-sulfate" title="Sulfate"></span>
+            <span class="marker marker-silica" title="Silica"></span>
+          </div>
+        </div>
+        <div class="preview-card">
+          <h3>Small (Zoomed Out)</h3>
+          <div class="preview-row" style="gap: var(--space-6);">
+            <span class="marker marker-sm marker-clay"></span>
+            <span class="marker marker-sm marker-sulfate"></span>
+            <span class="marker marker-sm marker-silica"></span>
+          </div>
+        </div>
+        <div class="preview-card">
+          <h3>Large (Zoomed In / Selected)</h3>
+          <div class="preview-row" style="gap: var(--space-6);">
+            <span class="marker marker-lg marker-clay"></span>
+            <span class="marker marker-lg marker-sulfate"></span>
+            <span class="marker marker-lg marker-silica"></span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CONFIDENCE BADGES -->
+    <section class="preview-section">
+      <h2>Confidence Badges</h2>
+      <p>Measured (solid) vs Estimated (dashed)</p>
+      <div class="preview-card">
+        <div class="preview-row" style="gap: var(--space-4); flex-wrap: wrap;">
+          <span class="badge badge-measured">Measured</span>
+          <span class="badge badge-estimated">Estimated</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- STATUS CHIPS -->
+    <section class="preview-section">
+      <h2>Status Chips</h2>
+      <p>GO / CAUTION / STOP — Hazard red reserved for danger only</p>
+      <div class="preview-card">
+        <div class="preview-row" style="gap: var(--space-4); flex-wrap: wrap;">
+          <span class="chip chip-go"><span class="chip-dot"></span>GO</span>
+          <span class="chip chip-caution"><span class="chip-dot"></span>CAUTION</span>
+          <span class="chip chip-stop"><span class="chip-dot"></span>STOP</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ROUTE STAT CARDS -->
+    <section class="preview-section">
+      <h2>Route Stat Cards</h2>
+      <p>Right panel — key metrics with mono numbers</p>
+      <div class="preview-grid">
+        <div class="stat-card">
+          <span class="stat-card-label">Total Distance</span>
+          <div class="stat-card-value">12.4<span class="stat-card-unit">km</span></div>
+          <div class="stat-card-detail">
+            <span>Planned: 11.8 km</span>
+            <span class="stat-card-trend positive">+0.6 km</span>
+          </div>
+        </div>
+        <div class="stat-card">
+          <span class="stat-card-label">Max Slope</span>
+          <div class="stat-card-value">18<span class="stat-card-unit">°</span></div>
+          <div class="stat-card-detail">
+            <span>Avg: 8.2°</span>
+            <span class="stat-card-trend caution">⚠ Steep</span>
+          </div>
+        </div>
+        <div class="stat-card">
+          <span class="stat-card-label">Energy Est.</span>
+          <div class="stat-card-value">847<span class="stat-card-unit">Wh</span></div>
+          <div class="stat-card-detail">
+            <span>Margin: 23%</span>
+            <span class="stat-card-trend positive">OK</span>
+          </div>
+        </div>
+        <div class="stat-card">
+          <span class="stat-card-label">Duration</span>
+          <div class="stat-card-value">4:23<span class="stat-card-unit">hrs</span></div>
+          <div class="stat-card-detail">
+            <span>Sol window: 6:00</span>
+            <span class="stat-card-trend positive">1:37 margin</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SITE CARD -->
+    <section class="preview-section">
+      <h2>Site Card</h2>
+      <p>Left rail / panel — site details with rock type, actions</p>
+      <div class="preview-card">
+        <article class="site-card">
+          <header class="site-card-header">
+            <h3 class="site-card-title">Yellowknife Bay</h3>
+            <div class="site-card-rock">
+              <span class="marker marker-clay"></span>
+              <span style="font-size: var(--text-xs); color: var(--color-clay); font-weight: var(--font-weight-medium);">Clay</span>
+            </div>
+          </header>
+          <div class="site-card-meta">
+            <div class="site-card-meta-item">
+              <span class="site-card-meta-label">Elevation</span>
+              <span class="site-card-meta-value">-4,212 m</span>
+            </div>
+            <div class="site-card-meta-item">
+              <span class="site-card-meta-label">Slope</span>
+              <span class="site-card-meta-value">3.2°</span>
+            </div>
+            <div class="site-card-meta-item">
+              <span class="site-card-meta-label">Distance</span>
+              <span class="site-card-meta-value">2.1 km</span>
+            </div>
+            <div class="site-card-meta-item">
+              <span class="site-card-meta-label">Confidence</span>
+              <span class="site-card-meta-value" style="font-family: var(--font-ui);"><span class="badge badge-measured" style="font-size: var(--text-xs); padding: 2px 6px;">Measured</span></span>
+            </div>
+          </div>
+          <div class="site-card-actions">
+            <button class="btn btn-primary btn-sm" style="flex:1;">Add to Route</button>
+            <button class="btn btn-secondary btn-sm" style="flex:1;">Details</button>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <!-- LAYER TOGGLE ITEM -->
+    <section class="preview-section">
+      <h2>Layer Toggle Item (Left Rail)</h2>
+      <p>Layer name, type, toggle switch</p>
+      <div class="preview-card">
+        <div class="preview-col">
+          <div class="layer-item">
+            <div class="layer-item-info">
+              <span class="layer-item-name">Elevation Contours</span>
+              <span class="layer-item-type">Vector • 10m interval</span>
+            </div>
+            <label class="layer-item-toggle toggle">
+              <input type="checkbox" checked>
+              <span class="toggle-track"></span>
+            </label>
+          </div>
+          <div class="layer-item">
+            <div class="layer-item-info">
+              <span class="layer-item-name">Slope Risk Zones</span>
+              <span class="layer-item-type">Raster • 5 classes</span>
+            </div>
+            <label class="layer-item-toggle toggle">
+              <input type="checkbox">
+              <span class="toggle-track"></span>
+            </label>
+          </div>
+          <div class="layer-item">
+            <div class="layer-item-info">
+              <span class="layer-item-name">Traverse Path</span>
+              <span class="layer-item-type">Planned • 12.4 km</span>
+            </div>
+            <label class="layer-item-toggle toggle">
+              <input type="checkbox" checked>
+              <span class="toggle-track"></span>
+            </label>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ROCK FILTER ITEM -->
+    <section class="preview-section">
+      <h2>Rock Filter Item (Left Rail)</h2>
+      <p>Checkbox, color swatch, name</p>
+      <div class="preview-card">
+        <div class="preview-col">
+          <label class="rock-filter-item">
+            <input type="checkbox" checked>
+            <span class="rock-filter-swatch rock-filter-swatch-clay"></span>
+            <span class="rock-filter-name">Clay-bearing</span>
+          </label>
+          <label class="rock-filter-item">
+            <input type="checkbox" checked>
+            <span class="rock-filter-swatch rock-filter-swatch-sulfate"></span>
+            <span class="rock-filter-name">Sulfate-rich</span>
+          </label>
+          <label class="rock-filter-item">
+            <input type="checkbox">
+            <span class="rock-filter-swatch rock-filter-swatch-silica"></span>
+            <span class="rock-filter-name">Silica-rich</span>
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <!-- LOADING STATE -->
+    <section class="preview-section">
+      <h2>Loading State</h2>
+      <p>Center map / panel — spinner with text</p>
+      <div class="preview-card" style="min-height: 120px;">
+        <div class="loading">
+          <div class="loading-spinner"></div>
+          <span class="loading-text">Computing traverse path…</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- EMPTY STATE -->
+    <section class="preview-section">
+      <h2>Empty State</h2>
+      <p>Map overlay / panel — "Select at least two stops to plan a route"</p>
+      <div class="preview-card" style="min-height: 160px;">
+        <div class="empty-state">
+          <svg class="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M12 6v6l4 2"/>
+          </svg>
+          <h3 class="empty-state-title">No Route Planned</h3>
+          <p class="empty-state-text">Select at least two stops on the map to plan a traverse route. Click a site marker to add it to your route.</p>
+          <button class="btn btn-primary empty-state-action">Browse Sites</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ELEVATION PROFILE -->
+    <section class="preview-section">
+      <h2>Elevation Profile (Bottom Strip)</h2>
+      <p>Canvas placeholder with stats</p>
+      <div class="preview-card">
+        <div class="elevation-profile">
+          <canvas class="elevation-canvas" width="600" height="100" style="background: var(--color-bg-elevated);"></canvas>
+          <div class="elevation-stats">
+            <div class="elevation-stat">
+              <span class="elevation-stat-label">Min:</span>
+              <span class="elevation-stat-value">-4,521 m</span>
+            </div>
+            <div class="elevation-stat">
+              <span class="elevation-stat-label">Max:</span>
+              <span class="elevation-stat-value">-3,987 m</span>
+            </div>
+            <div class="elevation-stat">
+              <span class="elevation-stat-label">Gain:</span>
+              <span class="elevation-stat-value">534 m</span>
+            </div>
+            <div class="elevation-stat">
+              <span class="elevation-stat-label">Max Grade:</span>
+              <span class="elevation-stat-value">18.2°</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SAMPLE PROGRESS -->
+    <section class="preview-section">
+      <h2>Sample Progress (Bottom Strip)</h2>
+      <p>List with completed/current/pending states</p>
+      <div class="preview-card">
+        <div class="sample-progress">
+          <div class="sample-progress-list">
+            <div class="sample-item completed">
+              <span class="sample-number">1</span>
+              <div class="sample-info">
+                <div class="sample-name">Yellowknife Bay Drill</div>
+                <div class="sample-type">Clay-bearing • Measured</div>
+              </div>
+              <span class="chip chip-go">Complete</span>
+            </div>
+            <div class="sample-item current">
+              <span class="sample-number">2</span>
+              <div class="sample-info">
+                <div class="sample-name">Murray Buttes Scoop</div>
+                <div class="sample-type">Sulfate-rich • Estimated</div>
+              </div>
+              <span class="chip chip-caution">In Progress</span>
+            </div>
+            <div class="sample-item">
+              <span class="sample-number">3</span>
+              <div class="sample-info">
+                <div class="sample-name">Vera Rubin Ridge Core</div>
+                <div class="sample-type">Silica-rich • Measured</div>
+              </div>
+              <span class="chip" style="color:var(--color-text-muted);background:var(--color-bg);border-color:var(--color-border);">Pending</span>
+            </div>
+            <div class="sample-item">
+              <span class="sample-number">4</span>
+              <div class="sample-info">
+                <div class="sample-name">Greenheugh Pediment</div>
+                <div class="sample-type">Sulfate-rich • Estimated</div>
+              </div>
+              <span class="chip" style="color:var(--color-text-muted);background:var(--color-bg);border-color:var(--color-border);">Pending</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- FULL LAYOUT PREVIEW -->
+    <section class="preview-section">
+      <h2>Full Layout Preview (Responsive)</h2>
+      <p>Top bar, left rail, center map, right panel, bottom strip — resize to test breakpoints</p>
+      <div style="border: 1px solid var(--color-border); border-radius: var(--radius-md); overflow: hidden; background: var(--color-bg);">
+        <div class="planner-app" style="height: 500px;">
+          <header class="planner-header">
+            <div class="header-left">
+              <button class="btn btn-icon btn-ghost" aria-label="Menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
+            </div>
+            <div class="header-center">
+              <div>
+                <div class="header-title">Mars Excursion Planner</div>
+                <div class="header-subtitle">Gale Crater — Sol 3427</div>
+              </div>
+            </div>
+            <div class="header-right">
+              <button class="btn btn-secondary btn-sm">Export GPX</button>
+              <button class="btn btn-primary btn-sm">Plan Route</button>
+            </div>
+          </header>
+
+          <aside class="planner-rail">
+            <div class="rail-section">
+              <h4 class="rail-section-title">Map Layers</h4>
+              <div class="rail-group">
+                <div class="layer-item">
+                  <div class="layer-item-info">
+                    <span class="layer-item-name">Elevation Contours</span>
+                    <span class="layer-item-type">Vector • 10m</span>
+                  </div>
+                  <label class="layer-item-toggle toggle"><input type="checkbox" checked><span class="toggle-track"></span></label>
+                </div>
+                <div class="layer-item">
+                  <div class="layer-item-info">
+                    <span class="layer-item-name">Slope Risk</span>
+                    <span class="layer-item-type">Raster • 5 classes</span>
+                  </div>
+                  <label class="layer-item-toggle toggle"><input type="checkbox"><span class="toggle-track"></span></label>
+                </div>
+                <div class="layer-item">
+                  <div class="layer-item-info">
+                    <span class="layer-item-name">Traverse Path</span>
+                    <span class="layer-item-type">Planned</span>
+                  </div>
+                  <label class="layer-item-toggle toggle"><input type="checkbox" checked><span class="toggle-track"></span></label>
+                </div>
+              </div>
+            </div>
+            <div class="rail-section">
+              <h4 class="rail-section-title">Rock Filters</h4>
+              <div class="rail-group">
+                <label class="rock-filter-item"><input type="checkbox" checked><span class="rock-filter-swatch rock-filter-swatch-clay"></span><span class="rock-filter-name">Clay-bearing</span></label>
+                <label class="rock-filter-item"><input type="checkbox" checked><span class="rock-filter-swatch rock-filter-swatch-sulfate"></span><span class="rock-filter-name">Sulfate-rich</span></label>
+                <label class="rock-filter-item"><input type="checkbox"><span class="rock-filter-swatch rock-filter-swatch-silica"></span><span class="rock-filter-name">Silica-rich</span></label>
+              </div>
+            </div>
+          </aside>
+
+          <main class="planner-map">
+            <div class="map-overlay">
+              <div class="loading">
+                <div class="loading-spinner"></div>
+                <span class="loading-text">Loading Gale Crater basemap…</span>
+              </div>
+            </div>
+          </main>
+
+          <aside class="planner-panel">
+            <div class="panel-section">
+              <h4 class="panel-section-title">Route Statistics</h4>
+              <div class="preview-grid" style="grid-template-columns: 1fr 1fr;">
+                <div class="stat-card"><span class="stat-card-label">Distance</span><div class="stat-card-value">12.4<span class="stat-card-unit">km</span></div></div>
+                <div class="stat-card"><span class="stat-card-label">Max Slope</span><div class="stat-card-value">18<span class="stat-card-unit">°</span></div></div>
+                <div class="stat-card"><span class="stat-card-label">Energy</span><div class="stat-card-value">847<span class="stat-card-unit">Wh</span></div></div>
+                <div class="stat-card"><span class="stat-card-label">Duration</span><div class="stat-card-value">4:23<span class="stat-card-unit">hrs</span></div></div>
+              </div>
+            </div>
+            <div class="panel-section">
+              <h4 class="panel-section-title">Safety Status</h4>
+              <div class="preview-col" style="gap: var(--space-2);">
+                <span class="chip chip-go"><span class="chip-dot"></span>Slope within limits</span>
+                <span class="chip chip-go"><span class="chip-dot"></span>Energy margin OK</span>
+                <span class="chip chip-caution"><span class="chip-dot"></span>Comm blackout 12min</span>
+                <span class="chip chip-go"><span class="chip-dot"></span>Thermal nominal</span>
+              </div>
+            </div>
+          </aside>
+
+          <div class="planner-strip">
+            <div class="strip-section">
+              <h4 class="strip-section-title">Sample Progress</h4>
+              <div class="sample-progress">
+                <div class="sample-progress-list">
+                  <div class="sample-item completed"><span class="sample-number">1</span><div class="sample-info"><div class="sample-name">Yellowknife Bay</div><div class="sample-type">Clay • Measured</div></div><span class="chip chip-go">Done</span></div>
+                  <div class="sample-item current"><span class="sample-number">2</span><div class="sample-info"><div class="sample-name">Murray Buttes</div><div class="sample-type">Sulfate • Est.</div></div><span class="chip chip-caution">Active</span></div>
+                  <div class="sample-item"><span class="sample-number">3</span><div class="sample-info"><div class="sample-name">Vera Rubin</div><div class="sample-type">Silica • Measured</div></div><span class="chip" style="color:var(--color-text-muted);background:var(--color-bg);border-color:var(--color-border);">Pending</span></div>
+                </div>
+              </div>
+            </div>
+            <div class="strip-section">
+              <h4 class="strip-section-title">Elevation Profile</h4>
+              <div class="elevation-profile">
+                <canvas class="elevation-canvas" width="300" height="80"></canvas>
+                <div class="elevation-stats">
+                  <div class="elevation-stat"><span class="elevation-stat-label">Min:</span><span class="elevation-stat-value">-4,521 m</span></div>
+                  <div class="elevation-stat"><span class="elevation-stat-label">Max:</span><span class="elevation-stat-value">-3,987 m</span></div>
+                  <div class="elevation-stat"><span class="elevation-stat-label">Gain:</span><span class="elevation-stat-value">534 m</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

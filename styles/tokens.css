@@ -1,0 +1,204 @@
+/* Design Tokens — NASA Space Apps Mars Excursion Planner */
+/* Dark mission-software aesthetic with Mars accent and colorblind-safe palette */
+
+:root {
+  /* ============================================================
+     COLOR — Base
+     ============================================================ */
+  --color-bg: #0B0D10;
+  --color-bg-elevated: #101317;
+  --color-panel: #14181D;
+  --color-panel-hover: #1A1F26;
+  --color-border: #2A313A;
+  --color-border-strong: #3A424D;
+  --color-border-subtle: #222830;
+
+  /* ============================================================
+     COLOR — Text
+     ============================================================ */
+  --color-text-primary: #E8ECEF;
+  --color-text-secondary: #9AA4B2;
+  --color-text-muted: #6B7583;
+  --color-text-inverse: #0B0D10;
+  --color-text-disabled: #4A5360;
+
+  /* ============================================================
+     COLOR — Accent (Mars Orange)
+     ============================================================ */
+  --color-accent: #E8743B;
+  --color-accent-hover: #D66830;
+  --color-accent-active: #C45D28;
+  --color-accent-muted: rgba(232, 116, 59, 0.12);
+  --color-accent-glow: rgba(232, 116, 59, 0.25);
+
+  /* ============================================================
+     COLOR — Rock Types (Colorblind-safe, distinct hues + shapes)
+     ============================================================ */
+  --color-clay: #2BB3A3;       /* Teal — circle marker */
+  --color-clay-muted: rgba(43, 179, 163, 0.12);
+  --color-clay-border: rgba(43, 179, 163, 0.35);
+
+  --color-sulfate: #F2B134;    /* Amber — triangle marker */
+  --color-sulfate-muted: rgba(242, 177, 52, 0.12);
+  --color-sulfate-border: rgba(242, 177, 52, 0.35);
+
+  --color-silica: #9B7FE8;     /* Violet — diamond marker */
+  --color-silica-muted: rgba(155, 127, 232, 0.12);
+  --color-silica-border: rgba(155, 127, 232, 0.35);
+
+  /* ============================================================
+     COLOR — Status (Semantic)
+     ============================================================ */
+  --color-go: #2BB3A3;
+  --color-go-muted: rgba(43, 179, 163, 0.12);
+  --color-go-border: rgba(43, 179, 163, 0.35);
+
+  --color-caution: #F2B134;
+  --color-caution-muted: rgba(242, 177, 52, 0.12);
+  --color-caution-border: rgba(242, 177, 52, 0.35);
+
+  --color-hazard: #E5484D;     /* Reserved for DANGER only */
+  --color-hazard-muted: rgba(229, 72, 77, 0.12);
+  --color-hazard-border: rgba(229, 72, 77, 0.35);
+
+  /* ============================================================
+     COLOR — Confidence Badges
+     ============================================================ */
+  --color-measured: #2BB3A3;
+  --color-measured-border: rgba(43, 179, 163, 0.5);
+  --color-estimated: #F2B134;
+  --color-estimated-border: rgba(242, 177, 52, 0.5);
+
+  /* ============================================================
+     TYPOGRAPHY
+     ============================================================ */
+  --font-ui: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Mono', 'SF Mono', Menlo, Consolas, monospace;
+  --font-label: var(--font-ui);
+
+  --text-xs: 0.625rem;    /* 10px */
+  --text-sm: 0.75rem;     /* 12px */
+  --text-base: 0.875rem;  /* 14px */
+  --text-lg: 1rem;        /* 16px */
+  --text-xl: 1.125rem;    /* 18px */
+  --text-2xl: 1.5rem;     /* 24px */
+
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  --line-height-tight: 1.2;
+  --line-height-normal: 1.5;
+  --line-height-relaxed: 1.6;
+
+  /* ============================================================
+     SPACING (4px base unit)
+     ============================================================ */
+  --space-0: 0;
+  --space-1: 0.25rem;   /* 4px */
+  --space-2: 0.5rem;    /* 8px */
+  --space-3: 0.75rem;   /* 12px */
+  --space-4: 1rem;      /* 16px */
+  --space-5: 1.25rem;   /* 20px */
+  --space-6: 1.5rem;    /* 24px */
+  --space-8: 2rem;      /* 32px */
+  --space-10: 2.5rem;   /* 40px */
+  --space-12: 3rem;     /* 48px */
+  --space-16: 4rem;     /* 64px */
+
+  /* ============================================================
+     BORDER RADIUS
+     ============================================================ */
+  --radius-none: 0;
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
+  --radius-xl: 8px;
+  --radius-full: 9999px;
+
+  /* ============================================================
+     SHADOWS / DEPTH
+     ============================================================ */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.4);
+  --shadow-glow: 0 0 16px var(--color-accent-glow);
+
+  /* ============================================================
+     TRANSITIONS
+     ============================================================ */
+  --transition-fast: 120ms ease;
+  --transition-normal: 200ms ease;
+  --transition-slow: 300ms ease;
+
+  /* ============================================================
+     LAYOUT
+     ============================================================ */
+  --header-height: 48px;
+  --rail-width: 280px;
+  --panel-width: 320px;
+  --strip-height: 120px;
+
+  --touch-target-min: 44px;  /* Minimum touch target */
+
+  /* ============================================================
+     Z-INDEX
+     ============================================================ */
+  --z-base: 1;
+  --z-rail: 10;
+  --z-panel: 20;
+  --z-modal: 50;
+  --z-toast: 100;
+}
+
+/* ============================================================
+   BASE RESET
+   ============================================================ */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
+  line-height: var(--line-height-normal);
+  color: var(--color-text-primary);
+  background-color: var(--color-bg);
+  min-height: 100vh;
+}
+
+/* Focus visible for accessibility */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* Selection */
+::selection {
+  background: var(--color-accent-muted);
+  color: var(--color-text-primary);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-bg);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-border-strong);
+  border-radius: var(--radius-full);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-muted);
+}
