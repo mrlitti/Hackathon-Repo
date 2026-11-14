@@ -4,6 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Rock Match</title>
+  <meta name="description" content="APXS field guide for Mars astronauts: match a rock against every APXS measurement by Curiosity, Spirit and Opportunity.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='13' fill='%23c1440e'/%3E%3Ccircle cx='11' cy='12' r='3' fill='%23e86a3a'/%3E%3Ccircle cx='20' cy='20' r='4' fill='%23a3360a'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="style.css">
   <script type="importmap">
     { "imports": {
@@ -13,61 +15,117 @@
   </script>
 </head>
 <body>
-  <header>
-    <h1>ROCK MATCH</h1>
-    <span class="sub">APXS field guide · CSA chemistry × NASA rovers</span>
-    <span id="status" class="status">connecting…</span>
+  <header class="top">
+    <div class="brand">
+      <span class="logo">ROCK MATCH</span>
+      <span class="tag">APXS field guide · NASA PDS + Canadian Space Agency data</span>
+    </div>
+    <div class="stats" id="stats"></div>
+    <div class="status" id="status"><i></i><span>connecting…</span></div>
   </header>
 
-  <main>
-    <!-- 3D MODEL VIEWER -->
-    <section id="viewer-panel" class="panel big">
-      <div class="panel-head">
-        <h2>3D Model</h2>
-        <label class="btn">Load model
-          <input type="file" id="model-input" accept=".glb,.gltf,.obj,.stl" hidden>
-        </label>
-        <select id="model-list"><option value="">Saved models…</option></select>
+  <main class="layout">
+    <section class="stage">
+      <nav class="tabs" role="tablist" aria-label="Views">
+        <button role="tab" id="tabbtn-map" aria-controls="tab-map" aria-selected="true" data-tab="map">Map</button>
+        <button role="tab" id="tabbtn-deposits" aria-controls="tab-deposits" aria-selected="false" data-tab="deposits">Deposits</button>
+        <button role="tab" id="tabbtn-model" aria-controls="tab-model" aria-selected="false" data-tab="model">3D model</button>
+      </nav>
+      <div class="panel-wrap">
+        <div class="tabpanel" id="tab-map" role="tabpanel" aria-labelledby="tabbtn-map">
+          <iframe id="globe" title="3D Mars globe with every APXS measurement" src="/globe/?embed=1"></iframe>
+          <div class="map-hint" id="map-hint" hidden>Click your position on the globe</div>
+        </div>
+
+        <div class="tabpanel" id="tab-deposits" role="tabpanel" aria-labelledby="tabbtn-deposits" hidden>
+          <div class="dep">
+            <div class="dep-head">
+              <div class="seg" id="dep-views" role="group" aria-label="Deposit family"></div>
+              <select id="dep-rover" aria-label="Rover">
+                <option value="">All rovers</option>
+                <option>Curiosity</option><option>Spirit</option><option>Opportunity</option>
+              </select>
+            </div>
+            <div class="dep-classes" id="dep-classes"></div>
+            <h3>Deposit sites <span id="dep-count"></span></h3>
+            <p class="hint">Measurements of the same deposit type within 250 m of each other are grouped into one site.</p>
+            <table class="dep-table">
+              <thead><tr><th>Deposit type</th><th>Rover</th><th class="num">Measurements</th><th class="num">Sols</th><th>Example targets</th><th></th></tr></thead>
+              <tbody id="dep-rows"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="tabpanel" id="tab-model" role="tabpanel" aria-labelledby="tabbtn-model" hidden>
+          <div class="model">
+            <div class="model-bar">
+              <label class="btn">Load 3D model…
+                <input type="file" id="model-input" accept=".glb,.gltf,.obj,.stl" hidden>
+              </label>
+              <select id="model-list" aria-label="Saved models"><option value="">Saved models…</option></select>
+              <span class="note" style="margin:0">.glb, .gltf, .obj or .stl · drag and drop works too</span>
+            </div>
+            <div id="viewer"><div id="viewer-hint">Drop a 3D scan of a rock or sample here</div></div>
+          </div>
+        </div>
       </div>
-      <div id="viewer"><p class="hint" id="viewer-hint">Drop a .glb / .gltf / .obj / .stl here</p></div>
     </section>
 
-    <!-- MAP -->
-    <section class="panel">
-      <div class="panel-head"><h2>Map</h2></div>
-      <div id="map" class="placeholder">Map of APXS measurement sites — TODO</div>
-      <div class="row">
-        <input id="lat" type="number" step="any" placeholder="lat">
-        <input id="lon" type="number" step="any" placeholder="lon">
-      </div>
-    </section>
+    <aside class="side">
+      <section class="card" id="card-identify" aria-labelledby="h-identify">
+        <header class="card-h"><span class="step">1</span><h2 id="h-identify">Field reading</h2></header>
+        <p class="hint">Enter an APXS reading: oxides in wt %, Ni / Zn / Br in ppm. At least 3 elements.</p>
+        <div class="row">
+          <select id="sim-class" aria-label="Deposit type to simulate"></select>
+          <button class="btn" id="sim-btn" title="Fill the form with a real measurement plus instrument noise">Simulate</button>
+        </div>
+        <div class="chem-grid" id="chem-grid"></div>
+        <div class="live-class" id="live-class" aria-live="polite"></div>
+        <div class="pos">
+          <span class="lbl">My position</span>
+          <input id="lat" inputmode="decimal" placeholder="Latitude" aria-label="Latitude (degrees)">
+          <input id="lon" inputmode="decimal" placeholder="Longitude °E" aria-label="East longitude (degrees)">
+          <button class="btn ghost" id="pick-btn">📍 Pick on map</button>
+        </div>
+        <div class="row">
+          <label class="btn ghost file">📷 Field photo
+            <input type="file" id="photo-input" accept="image/*" capture="environment" hidden>
+          </label>
+          <button class="btn ghost" id="clear-btn">Clear</button>
+          <button class="btn primary" id="match-btn" disabled>Find match</button>
+        </div>
+        <div id="sim-note"></div>
+        <div class="note" id="photo-note"></div>
+      </section>
 
-    <!-- INPUT -->
-    <section class="panel">
-      <div class="panel-head"><h2>Identify Rock</h2></div>
-      <label class="btn">Photograph / upload rock
-        <input type="file" id="photo-input" accept="image/*" capture="environment" hidden>
-      </label>
-      <img id="photo-preview" alt="">
-      <p class="hint">Or enter chemistry (wt %):</p>
-      <div id="chem-inputs" class="chem-grid"></div>
-      <button id="match-btn" class="btn primary">Find match</button>
-    </section>
+      <section class="card" id="card-result" aria-labelledby="h-result" hidden>
+        <header class="card-h"><span class="step">2</span><h2 id="h-result">Verdict</h2></header>
+        <div id="verdict"></div>
+        <div class="facts" id="facts"></div>
+        <h3>Closest measured rocks</h3>
+        <ol class="matches" id="matches"></ol>
+      </section>
 
-    <!-- RESULTS -->
-    <section class="panel">
-      <div class="panel-head"><h2>Best Match</h2></div>
-      <div id="verdict" class="verdict">—</div>
-      <div id="results"><p class="hint">No search yet.</p></div>
-    </section>
-
-    <!-- ROCK DETAIL -->
-    <section class="panel">
-      <div class="panel-head"><h2>Rock Detail</h2></div>
-      <div id="detail"><p class="hint">Select a match to see rover photo, chemistry and science notes.</p></div>
-    </section>
+      <section class="card" id="card-detail" aria-labelledby="d-title" hidden>
+        <header class="card-h"><span class="step">3</span><h2 id="d-title">Rock detail</h2></header>
+        <div class="d-meta" id="d-meta"></div>
+        <div class="chip-row" id="d-class"></div>
+        <div class="photos" id="d-photos"></div>
+        <h3 id="spider-title">Chemistry vs typical Mars</h3>
+        <div class="legend" id="spider-legend"></div>
+        <div class="chart" id="spider"></div>
+        <details><summary>Show values</summary><table class="values" id="chem-table"></table></details>
+        <div id="spectrum-block" hidden>
+          <h3>APXS X-ray spectrum</h3>
+          <div class="chart" id="spectrum"></div>
+          <div class="note" id="spectrum-note"></div>
+        </div>
+        <div class="prov" id="d-prov"></div>
+      </section>
+    </aside>
   </main>
 
+  <div class="tooltip" id="tooltip" role="status"></div>
   <script type="module" src="app.js"></script>
 </body>
 </html>

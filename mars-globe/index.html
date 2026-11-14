@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Mars Globe</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='13' fill='%23c1440e'/%3E%3Ccircle cx='11' cy='12' r='3' fill='%23e86a3a'/%3E%3Ccircle cx='20' cy='20' r='4' fill='%23a3360a'/%3E%3C/svg%3E">
 <style>
   :root { --bg:#000; --panel:rgba(8,8,8,.86); --line:#262626; --text:#ddd; --dim:#7a7a7a; --accent:#ff6a3d; --blue:#6cf; }
   * { box-sizing:border-box; }
@@ -40,6 +41,32 @@
   .label.site { border-left:2px solid var(--accent); }
   .label.feature { border-left:2px solid var(--blue); color:#cde; }
   .label.moon { border-left:2px solid #aaa; color:#ccc; }
+  /* APXS layer */
+  #tip { position:fixed; z-index:30; pointer-events:none; background:rgba(8,8,8,.94); border:1px solid var(--line); border-radius:6px; padding:6px 9px; font-size:12px; display:none; max-width:280px; }
+  #tip .dim { color:var(--dim); font-size:11px; }
+  .dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:6px; vertical-align:-1px; box-shadow:0 0 0 1px rgba(0,0,0,.6); }
+  #legend { margin:6px 0 4px; }
+  .lg { display:grid; grid-template-columns:16px 1fr auto; align-items:center; gap:6px; font-size:12px; margin:2px 0; }
+  .lg span { display:flex; align-items:center; }
+  .lg em { color:var(--dim); font-style:normal; font-variant-numeric:tabular-nums; font-size:11px; }
+  .sites { display:grid; grid-template-columns:repeat(3,1fr); gap:4px; margin:6px 0; }
+  .sites button { padding:5px 2px; font-size:11px; }
+  .badge { background:rgba(0,0,0,.75); border:1px solid var(--c); color:#fff; padding:3px 9px; border-radius:12px; font-size:11px; white-space:nowrap; cursor:pointer; pointer-events:auto; }
+  .badge b { color:var(--c); }
+  .chip { display:inline-flex; align-items:center; padding:2px 9px; border-radius:10px; background:#1b1b1b; font-size:12px; margin:2px 0 4px; }
+  table.chem { width:100%; border-collapse:collapse; font-size:12px; margin:6px 0; font-variant-numeric:tabular-nums; }
+  table.chem td { padding:2px 4px; border-bottom:1px solid #1d1d1d; }
+  table.chem td:nth-child(2) { text-align:right; }
+  .photos { display:grid; grid-template-columns:repeat(4,1fr); gap:4px; margin:6px 0; }
+  .photos img { width:100%; aspect-ratio:1; object-fit:cover; border-radius:4px; display:block; background:#111; }
+  .photos .note { grid-column:1/-1; }
+  .cta { display:block; margin-top:8px; text-align:center; padding:7px; border-radius:6px; background:var(--accent); color:#000; font-weight:600; text-decoration:none; }
+  #info a { color:var(--blue); }
+  .you { color:#fff; font-size:11px; font-weight:700; text-shadow:0 0 4px #000; display:flex; flex-direction:column; align-items:center; pointer-events:none; }
+  .you span { width:14px; height:14px; border-radius:50%; background:#00e5ff; border:2px solid #fff; margin-bottom:2px; animation:pulse 1.6s infinite; }
+  @keyframes pulse { 0% { box-shadow:0 0 0 0 rgba(0,229,255,.75); } 100% { box-shadow:0 0 0 16px rgba(0,229,255,0); } }
+  body.embed #credit { display:none; }
+  body.picking canvas { cursor:crosshair; }
   @media (max-width:700px) {
     #controls { right:12px; width:auto; max-height:50%; }
     #info { top:auto; bottom:110px; left:12px; right:12px; width:auto; }
@@ -63,6 +90,7 @@
   <div class="body">
     <h2>Surface layer</h2>
     <select id="layer">
+      <option value="best">Sharpest · Viking + CTX + HiRISE</option>
       <option value="viking">Viking color mosaic · optical</option>
       <option value="themis">THEMIS day infrared · thermal</option>
       <option value="mola">MOLA color elevation · topographic</option>
@@ -103,6 +131,19 @@
     <label><input type="checkbox" id="show-atmo" checked> Atmosphere</label>
     <label><input type="checkbox" id="spin" checked> Auto-rotate</label>
 
+    <div id="apxs-section" hidden>
+      <h2>APXS deposits</h2>
+      <div class="note" id="apxs-count"></div>
+      <div class="sites">
+        <button data-site="Curiosity">Curiosity</button><button data-site="Spirit">Spirit</button><button data-site="Opportunity">Opportunity</button>
+      </div>
+      <div class="note" style="margin-top:8px">Colour by</div>
+      <select id="apxs-view"></select>
+      <div id="legend"></div>
+      <label><input type="checkbox" id="show-apxs" checked> Show measurements</label>
+      <label><input type="checkbox" id="show-trav" checked> Rover traverses</label>
+    </div>
+
     <h2>Tools</h2>
     <button id="measure-btn">📏 Measure distance &amp; profile</button>
 
@@ -128,6 +169,8 @@
   <canvas id="profile" width="680" height="160"></canvas>
 </div>
 
+<div id="tip"></div>
+
 <div id="loading" class="panel">
   <div>Loading NASA Mars data…</div>
   <div id="bar"><div></div></div>
@@ -135,7 +178,8 @@
 
 <div id="credit" class="panel">
   Data: NASA/JPL-Caltech Mars Trek — Viking MDIM 2.1 (USGS), MGS MOLA, Mars Express HRSC (ESA/DLR/FU Berlin),
-  Mars Odyssey THEMIS (ASU). Phobos: Viking + HRSC. Sun: Mars24 algorithm (Allison &amp; McEwen 2000).
+  Mars Odyssey THEMIS (ASU), HiRISE (NASA/JPL/UArizona). CTX mosaic: NASA/JPL/MSSS/The Murray Lab (via Esri).
+  APXS: NASA PDS &amp; Canadian Space Agency. Phobos: Viking + HRSC. Sun: Mars24 algorithm (Allison &amp; McEwen 2000).
   Moons shown 15× real size; distances to scale; moon positions illustrative.
 </div>
 
@@ -153,6 +197,8 @@ const TREK = 'https://trek.nasa.gov/tiles';
 const tileURL = (L, z, x, y) => `${TREK}/${L.body}/EQ/${L.id}/1.0.0/default/default028mm/${z}/${y}/${x}.${L.ext}`;
 
 const LAYERS = {
+  best:      { composite: true, max: 13,
+               note: 'Viking color, sharpened with the CTX mosaic (5 m/px) everywhere and HiRISE (0.3–0.6 m/px) at the rover sites.' },
   viking:    { body: 'Mars', id: 'Mars_Viking_MDIM21_ClrMosaic_global_232m', ext: 'jpg', max: 7,
                note: 'Viking Orbiter color mosaic (USGS MDIM 2.1).' },
   themis:    { body: 'Mars', id: 'THEMIS_DayIR_ControlledMosaics_100m_v2_oct2018', ext: 'png', max: 9,
@@ -167,6 +213,20 @@ const DEM = { body: 'Mars', id: 'Mars_MGS_MOLA_DEM_mosaic_global_463m_8', ext: '
 const DEM_MIN_M = -8201, DEM_RANGE_M = 29442;
 const DATUM_NORM = -DEM_MIN_M / DEM_RANGE_M;          // grey level of 0 m
 const TRUE_RELIEF = DEM_RANGE_M / 1000 / R_KM;         // full DEM range in Mars radii
+
+// Murray Lab global CTX mosaic (Esri OnMars service): 512-px tiles on the same grid, level 12 = 5 m/px.
+// When served by the Rock Match backend (/globe/), tiles go through its caching proxy.
+const VIA_BACKEND = location.pathname.startsWith('/globe/');
+const CTX = { max: 12, size: 512, url: (z, x, y) => (VIA_BACKEND ? `/api/tiles/ctx/${z}/${y}/${x}.png`
+  : `https://astro.arcgis.com/arcgis/rest/services/OnMars/CTX/MapServer/tile/${z}/${y}/${x}`) };
+// HiRISE mosaics of the rover sites (NASA Mars Trek). bbox = [lonW, latS, lonE, latN]
+const HIRISE_SITES = [
+  { id: 'curiosity_hirise_mosaic', max: 16, bbox: [137.1224669, -4.9254743, 137.7298129, -4.2489588] },
+  { id: 'HiRISE_ColumbiaHills', max: 16, bbox: [175.3183393, -14.847288, 175.7967313, -14.250304] },
+  { id: 'spirit_hirise_mosaic', max: 17, bbox: [175.4278511, -14.6925026, 175.5858031, -14.5357546] },
+  { id: 'opportunity_hirise_mosaic', max: 17, bbox: [-5.5964391, -2.7513281, -4.9954112, -1.8994384] },
+].map((s) => ({ ...s, body: 'Mars', ext: 'png' }));
+const MIN_ALT = 0.5 / R_KM;   // closest approach: 500 m above the local terrain
 
 const PHOBOS_IMG = { body: 'Phobos', id: 'Phobos_Viking_Mosaic_40ppd_DLRcontrol', ext: 'jpg' };
 const PHOBOS_DEM = { body: 'Phobos', id: 'Phobos_ME_HRSC_DEM_Global_2ppd', ext: 'jpg' };
@@ -294,7 +354,7 @@ controls.autoRotate = true;
 controls.autoRotateSpeed = 0.3;
 
 const state = {
-  layer: LAYERS.viking, exag: 3, sharp: false, sunMode: 'real',
+  layer: LAYERS.best, exag: 3, sharp: false, sunMode: 'real',
   offsetH: 0, playing: false, measuring: false, m24: mars24(Date.now()),
 };
 
@@ -387,8 +447,26 @@ scene.add(limb, haze);
 const queue = [];
 let active = 0;
 const MAX_ACTIVE = 12;
+const imgCache = new Map(), inflight = new Map();   // LRU of decoded tiles + shared in-flight requests
 function requestImage(url, wanted = () => true, z = 0) {
-  return new Promise((resolve) => { queue.push({ url, resolve, wanted, z }); pump(); });
+  const hit = imgCache.get(url);
+  if (hit) { imgCache.delete(url); imgCache.set(url, hit); return Promise.resolve(hit); }
+  const running = inflight.get(url);
+  if (running) { running.wanted.push(wanted); return running.promise; }
+  const entry = { wanted: [wanted] };
+  entry.promise = new Promise((resolve) => {
+    queue.push({ url, resolve, wanted: () => entry.wanted.some((w) => w()), z });
+    pump();
+  }).then((img) => {
+    inflight.delete(url);
+    if (img) {
+      imgCache.set(url, img);
+      if (imgCache.size > 320) imgCache.delete(imgCache.keys().next().value);
+    }
+    return img;
+  });
+  inflight.set(url, entry);
+  return entry.promise;
 }
 function nextJob() {
   let best = -1;
@@ -401,9 +479,19 @@ function pump() {
     if (!job.wanted()) { job.resolve(null); continue; }
     active++;
     const img = new Image();
+    let settled = false;
+    const done = (result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      active--;
+      job.resolve(result);
+      pump();
+    };
+    const timer = setTimeout(() => { img.src = ''; done(null); }, 20000);   // hung request -> treat as missing
     img.crossOrigin = 'anonymous';
-    img.onload = () => { active--; job.resolve(img); pump(); };
-    img.onerror = () => { active--; job.resolve(null); pump(); };
+    img.onload = () => done(img);
+    img.onerror = () => done(null);
     img.src = job.url;
   }
 }
@@ -513,6 +601,15 @@ const heightToM = (n) => n * DEM_RANGE_M + DEM_MIN_M;
 const dispScale = () => TRUE_RELIEF * state.exag;
 const surfaceR = (n) => R + ((n ?? DATUM_NORM) - DATUM_NORM) * dispScale();
 
+// Terrain radius under the camera, so you can descend into low places like Gale Crater.
+let localR = R;
+function updateLocal() {
+  const ll = toLatLon(camera.position);
+  localR = surfaceR(sampleHeight(ll.lat, ll.lon));
+}
+const horizonR = () => Math.min(localR, R) - 0.0015;          // conservative radius for horizon tests
+const altitudeU = () => Math.max(camera.position.length() - localR, 1e-6);
+
 function evictDem() {
   if (demCache.size < 350) return;
   [...demCache.values()].filter((e) => e.refs <= 0 && e.z > 2 && e.heights)
@@ -561,6 +658,80 @@ function patchGeometry(latN, latS, lonW, lonE) {
   return g;
 }
 
+/* "Sharpest" layer: Viking color pan-sharpened with CTX (5 m) and HiRISE (0.3-0.6 m) luminance */
+function hiriseFor(n) {
+  return HIRISE_SITES.filter((s) => n.lonW < s.bbox[2] && n.lonE > s.bbox[0] && n.latS < s.bbox[3] && n.latN > s.bbox[1])
+    .sort((a, b) => a.max - b.max);
+}
+function maxZFor(n) {
+  if (!state.layer.composite) return state.layer.max;
+  return Math.max(state.layer.max, ...hiriseFor(n).map((s) => s.max));
+}
+// Detail transfer: multiply the base colour by (detail / blurred detail). Only the fine structure the
+// base layer lacks is added, so brightness stays continuous across tiles and between layers.
+const dtTmp = Object.assign(document.createElement('canvas'), { width: S, height: S }).getContext('2d', { willReadFrequently: true });
+const dtLow = Object.assign(document.createElement('canvas'), { width: S, height: S }).getContext('2d', { willReadFrequently: true });
+function transferDetail(g, img, sx, sy, sw, sh, basePx) {
+  const lp = clamp(Math.round(basePx), 1, S);
+  if (lp >= S) return;                                  // base already has full detail
+  dtTmp.clearRect(0, 0, S, S);
+  dtTmp.drawImage(img, sx, sy, sw, sh, 0, 0, S, S);
+  dtLow.clearRect(0, 0, S, S);
+  dtLow.drawImage(img, sx, sy, sw, sh, 0, 0, lp, lp);   // blur to the base layer's own resolution ...
+  dtLow.drawImage(dtLow.canvas, 0, 0, lp, lp, 0, 0, S, S); // ... and back up (bilinear)
+  const d = dtTmp.getImageData(0, 0, S, S).data, low = dtLow.getImageData(0, 0, S, S).data;
+  const base = g.getImageData(0, 0, S, S), b = base.data;
+  for (let i = 0; i < b.length; i += 4) {
+    const a = d[i + 3] / 255;
+    if (a === 0 || low[i + 3] === 0) continue;
+    const ratio = clamp((d[i] * 0.3 + d[i + 1] * 0.59 + d[i + 2] * 0.11 + 6) /
+                        (low[i] * 0.3 + low[i + 1] * 0.59 + low[i + 2] * 0.11 + 6), 0.2, 4);
+    const k = 1 + (ratio - 1) * a;
+    b[i] = Math.min(255, b[i] * k); b[i + 1] = Math.min(255, b[i + 1] * k); b[i + 2] = Math.min(255, b[i + 2] * k);
+  }
+  g.putImageData(base, 0, 0);
+}
+
+async function compositeTile(n) {
+  const wanted = () => !n.dead;
+  const vz = Math.min(n.z, LAYERS.viking.max);
+  const jobs = [{ z: vz, size: S, mode: 'source-over', alpha: 1,
+    img: requestImage(tileURL(LAYERS.viking, vz, n.x >> (n.z - vz), n.y >> (n.z - vz)), wanted, vz) }];
+  let basePx = S;
+  if (n.z >= 8) {
+    const cz = Math.min(n.z - 1, CTX.max);
+    jobs.push({ z: cz, size: CTX.size, mode: 'luminosity', alpha: 0.85,
+      img: requestImage(CTX.url(cz, n.x >> (n.z - cz), n.y >> (n.z - cz)), wanted, cz + 1) });
+    basePx = CTX.size / 2 ** (n.z - cz);              // pixels of real CTX detail inside this tile
+  }
+  if (n.z >= 12) {
+    for (const site of hiriseFor(n)) {
+      const hz = Math.min(n.z, site.max);
+      jobs.push({ z: hz, size: S, basePx,
+        img: requestImage(tileURL(site, hz, n.x >> (n.z - hz), n.y >> (n.z - hz)), wanted, hz) });
+    }
+  }
+  const imgs = await Promise.all(jobs.map((j) => j.img));
+  if (n.dead || !imgs[0]) return null;
+  const c = document.createElement('canvas');
+  c.width = c.height = S;
+  const g = c.getContext('2d', { willReadFrequently: true });
+  jobs.forEach((j, i) => {
+    if (!imgs[i]) return;
+    const k = n.z - j.z, sub = j.size / 2 ** k, sx = (n.x % 2 ** k) * sub, sy = (n.y % 2 ** k) * sub;
+    if (j.mode) {                                   // Viking colour, then CTX luminance on top
+      g.globalCompositeOperation = j.mode;
+      g.globalAlpha = j.alpha;
+      g.drawImage(imgs[i], sx, sy, sub, sub, 0, 0, S, S);
+      g.globalCompositeOperation = 'source-over';
+      g.globalAlpha = 1;
+    } else {                                        // HiRISE: only the detail CTX lacks
+      transferDetail(g, imgs[i], sx, sy, sub, sub, imgs[1] ? j.basePx : S / 2 ** (n.z - vz));
+    }
+  });
+  return c;
+}
+
 class Node {
   constructor(z, x, y) {
     Object.assign(this, { z, x, y, children: null, mesh: null, ready: false, dead: false });
@@ -575,7 +746,9 @@ class Node {
     const dz = Math.min(this.z, DEM.max), k = this.z - dz;
     this.dem = getDem(dz, this.x >> k, this.y >> k);
     this.dem.refs++;
-    const [img] = await Promise.all([requestImage(tileURL(state.layer, this.z, this.x, this.y), () => !this.dead, this.z), this.dem.promise]);
+    const imgP = state.layer.composite ? compositeTile(this)
+      : requestImage(tileURL(state.layer, this.z, this.x, this.y), () => !this.dead, this.z);
+    const [img] = await Promise.all([imgP, this.dem.promise]);
     if (this.dead) return;
     const map = img ? new THREE.Texture(img) : blankTex;
     if (img) { map.colorSpace = THREE.SRGBColorSpace; map.anisotropy = MAX_ANISO; map.needsUpdate = true; }
@@ -590,6 +763,7 @@ class Node {
     this.mesh = new THREE.Mesh(patchGeometry(this.latN, this.latS, this.lonW, this.lonE), mat);
     this.mesh.visible = false;
     globe.add(this.mesh);
+    this.hN = sampleHeight((this.latN + this.latS) / 2, (this.lonW + this.lonE) / 2);
     this.ready = true;
     live.add(this);
   }
@@ -633,27 +807,27 @@ function updateLOD() {
   pv.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
   frustum.setFromProjectionMatrix(pv);
   const cam = camera.position, camDist = cam.length(), camN = cam.clone().normalize();
-  const horizon = Math.acos(clamp(R / camDist, -1, 1));
+  const horizon = Math.acos(clamp(horizonR() / camDist, -1, 1));
   const pxPerRad = innerHeight / (camera.fov * D2R);
   const budget = state.sharp ? 170 : 290;
-  const maxZ = state.layer.max;
   deepest = 0; holes = 0;
 
   const wants = (n) => {
-    if (n.z >= maxZ || live.size > 1100) return false;
+    if (n.z >= maxZFor(n)) return false;
     const ang = Math.acos(clamp(n.center.dot(camN), -1, 1));
     if (ang - n.size * 0.75 > horizon + 0.03) return false;
-    bsphere.center.copy(n.center);
-    bsphere.radius = n.size * 0.75 + 0.06;
+    const rc = surfaceR(n.hN);                          // the node's own terrain height, not the datum
+    bsphere.center.copy(n.center).multiplyScalar(rc);
+    bsphere.radius = n.size * 0.75 * rc + 0.0015;       // + ~5 km for relief inside the tile
     if (!frustum.intersectsSphere(bsphere)) return false;
-    const d = Math.max(cam.distanceTo(n.center) - n.size * 0.5, 1e-4);
+    const d = Math.max(cam.distanceTo(bsphere.center) - n.size * 0.5, 1e-5);
     return (n.size / d) * pxPerRad > budget;
   };
   const visit = (n) => {
-    if (wants(n)) {
+    if (wants(n) && (n.children || live.size < 1400)) {   // the cap stops new splits, never collapses the view
       if (!n.children) n.split();
       if (n.children.every((c) => c.ready)) { if (n.mesh) n.mesh.visible = false; n.children.forEach(visit); return; }
-    } else if (n.children) n.merge();
+    } else if (n.children && !wants(n)) n.merge();
     if (n.mesh) { n.mesh.visible = true; deepest = Math.max(deepest, n.z); }
     else if (Math.acos(clamp(n.center.dot(camN), -1, 1)) - n.size * 0.75 < horizon) holes++;
   };
@@ -712,12 +886,13 @@ function placeMarkers() {
 const show = { site: true, feature: true };
 const tmpV = new THREE.Vector3();
 function updateMarkers() {
-  const camN = camera.position.clone().normalize(), alt = camera.position.length() - R;
+  const camN = camera.position.clone().normalize(), alt = altitudeU();
   const tierOk = [true, true, alt < 2.2, alt < 0.7];
+  const cosH = horizonR() / camera.position.length(), margin = 0.2 * (1 - cosH);
   markers.forEach((m) => {
     const { kind, label, tier } = m.userData;
     tmpV.copy(m.position).normalize();
-    const facing = tmpV.dot(camN) > R / camera.position.length() + 0.15; // hide labels near the limb
+    const facing = tmpV.dot(camN) > cosH + margin; // hide labels near the limb
     const on = show[kind] && facing && tierOk[tier];
     m.visible = on; label.visible = on;
     m.scale.setScalar(camera.position.distanceTo(m.position) * 0.0045);
@@ -940,12 +1115,29 @@ function pick(e) {
   ray.setFromCamera(mouse, camera);
   return ray.ray.intersectSphere(pickSphere, hitP) ? toLatLon(hitP) : null;
 }
-renderer.domElement.addEventListener('pointermove', (e) => { hover = pick(e); updateReadout(); });
+renderer.domElement.addEventListener('pointermove', (e) => {
+  hover = pick(e);
+  updateReadout();
+  showTip(e.buttons ? -1 : nearestRock(e.clientX, e.clientY), e);
+});
+renderer.domElement.addEventListener('pointerleave', () => showTip(-1));
 renderer.domElement.addEventListener('pointerdown', (e) => { downXY = [e.clientX, e.clientY]; flight = null; });
 renderer.domElement.addEventListener('pointerup', (e) => {
   if (!downXY || Math.hypot(e.clientX - downXY[0], e.clientY - downXY[1]) > 5) return;
   const ll = pick(e);
-  if (ll && state.measuring) measureClick(ll);
+  if (apxs.picking && ll) {
+    setPicking(false);
+    setYou(ll.lat, ll.lon);
+    post({ type: 'rm:position', lat: ll.lat, lon: ll.lon });
+    return;
+  }
+  if (ll && state.measuring) { measureClick(ll); return; }
+  const i = nearestRock(e.clientX, e.clientY, 12);
+  if (i >= 0) {
+    const id = apxs.rocks[i].id;
+    selectRock(id, { info: !EMBED });
+    post({ type: 'rm:rock', id });
+  }
 });
 function updateReadout() {
   const main = document.getElementById('ro-main');
@@ -957,11 +1149,12 @@ function updateReadout() {
 }
 function updateStatus() {
   const mpp = 180 / 2 ** deepest / S * D2R * R_KM * 1000;
-  const alt = (camera.position.length() - R) * R_KM;
+  const alt = altitudeU() * R_KM;
   const loading = active + queue.length;
+  const altTxt = alt < 10 ? `${alt.toFixed(1)} km` : `${Math.round(alt).toLocaleString()} km`;
+  const mppTxt = mpp >= 1000 ? `${(mpp / 1000).toFixed(1)} km` : mpp >= 10 ? `${Math.round(mpp)} m` : `${mpp.toFixed(1)} m`;
   document.getElementById('ro-sub').textContent =
-    `altitude ${Math.round(alt).toLocaleString()} km · imagery ≈ ${mpp >= 1000 ? (mpp / 1000).toFixed(1) + ' km' : Math.round(mpp) + ' m'}/px` +
-    (loading ? ` · loading ${loading}` : '');
+    `altitude ${altTxt} · imagery ≈ ${mppTxt}/px` + (loading ? ` · loading ${loading}` : '');
 }
 
 /* =====================================================================
@@ -983,8 +1176,8 @@ function onExag() {
   state.exag = +$('exag').value;
   $('exag-val').textContent = state.exag === 0 ? 'Flat' : state.exag === 1 ? 'True scale (1×)' : `${state.exag}× exaggerated`;
   live.forEach((n) => applyDisp(n.mesh.material));
-  controls.minDistance = R + (1 - DATUM_NORM) * dispScale() + 0.0015;
   placeMarkers();
+  drapeApxs();
   if (measure.b) drawMeasure();
   clearTimeout(normalTimer);
   normalTimer = setTimeout(() => demCache.forEach((e) => e.heights && computeNormals(e)), 120);
@@ -1013,6 +1206,349 @@ $('controls-head').onclick = () => $('controls').classList.toggle('collapsed');
 if (innerWidth < 700) $('controls').classList.add('collapsed');
 
 /* =====================================================================
+   APXS measurements & deposits — loaded from the Rock Match backend when it
+   is running (the globe still works on its own without it).
+   ===================================================================== */
+const QS = new URLSearchParams(location.search);
+const API = QS.get('api') || '/api';
+const EMBED = QS.get('embed') === '1' && window.parent !== window;
+const ROVER_COLOR = { Curiosity: '#ff6a3d', Spirit: '#4fc3f7', Opportunity: '#9ccc65' };
+const PT = { other: 5, base: 8, hi: 12, sel: 16 };
+const apxs = {
+  ready: false, rocks: [], index: new Map(), classById: new Map(), sites: {},
+  views: [], view: null, slotColors: [], otherColor: '#898781', group: null,
+  points: null, pos: null, sizes: null, vis: null, trav: {}, badges: [],
+  hiddenGroups: new Set(), showOther: true, rovers: new Set(Object.keys(ROVER_COLOR)),
+  highlight: new Set(), selected: null, picking: false, you: null, youObj: null,
+};
+const okJson = (r) => { if (!r.ok) throw new Error(`${r.status} ${r.statusText}`); return r.json(); };
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const post = (msg) => { if (EMBED) window.parent.postMessage(msg, location.origin); };
+if (EMBED) { document.body.classList.add('embed'); $('controls').classList.add('collapsed'); }
+
+const apxsMat = new THREE.ShaderMaterial({
+  uniforms: { uScale: { value: 1 }, uHorizon: { value: 1 } },
+  vertexShader: `
+    attribute vec3 aColor; attribute float aSize; attribute float aVis;
+    uniform float uScale; uniform float uHorizon;
+    varying vec3 vColor; varying float vAlpha; varying float vSize;
+    void main() {
+      float cd = length(cameraPosition);
+      float facing = dot(normalize(position), cameraPosition / cd) - uHorizon / cd;
+      vAlpha = aVis * smoothstep(-0.0004, 0.0015, facing);
+      vColor = aColor; vSize = aSize;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      gl_PointSize = vAlpha > 0.0 ? aSize * uScale : 0.0;
+    }`,
+  fragmentShader: `
+    varying vec3 vColor; varying float vAlpha; varying float vSize;
+    void main() {
+      vec2 c = gl_PointCoord * 2.0 - 1.0; float r = length(c);
+      if (r > 1.0 || vAlpha <= 0.0) discard;
+      float ring = smoothstep(0.58, 0.7, r);
+      vec3 rim = vSize > 10.0 ? vec3(1.0) : vec3(0.05);
+      gl_FragColor = vec4(mix(vColor, rim, ring), vAlpha * smoothstep(1.0, 0.82, r));
+    }`,
+  transparent: true, depthTest: false, depthWrite: false,
+});
+
+async function loadApxs() {
+  let meta, list, trav;
+  try {
+    [meta, list, trav] = await Promise.all([
+      fetch(`${API}/meta`).then(okJson), fetch(`${API}/rocks?fields=summary`).then(okJson), fetch(`${API}/traverses`).then(okJson)]);
+  } catch (e) {
+    post({ type: 'rm:ready', apxs: false });
+    return;
+  }
+  if (!list.rocks?.length) { post({ type: 'rm:ready', apxs: false }); return; }
+  (meta.classes || []).forEach((c) => apxs.classById.set(c.id, c));
+  apxs.sites = meta.sites || {};
+  apxs.views = meta.views || [];
+  apxs.slotColors = meta.slot_colors || ['#3987e5', '#d95926', '#199e70'];
+  apxs.otherColor = meta.other_color || '#898781';
+  apxs.rocks = list.rocks;
+  apxs.rocks.forEach((r, i) => apxs.index.set(r.id, i));
+  const n = apxs.rocks.length;
+  apxs.pos = new Float32Array(n * 3);
+  apxs.sizes = new Float32Array(n).fill(PT.base);
+  apxs.vis = new Float32Array(n).fill(1);
+  apxs.group = new Int8Array(n).fill(-1);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(apxs.pos, 3));
+  g.setAttribute('aColor', new THREE.BufferAttribute(new Float32Array(n * 3), 3));
+  g.setAttribute('aSize', new THREE.BufferAttribute(apxs.sizes, 1));
+  g.setAttribute('aVis', new THREE.BufferAttribute(apxs.vis, 1));
+  g.setIndex(new THREE.BufferAttribute(new Uint32Array(n), 1));   // draw order: grey first, highlights last
+  apxs.points = new THREE.Points(g, apxsMat);
+  apxs.points.frustumCulled = false;
+  apxs.points.renderOrder = 10;
+  scene.add(apxs.points);
+
+  for (const [rover, pts] of Object.entries(trav)) {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pts.length * 3), 3));
+    const line = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: ROVER_COLOR[rover] || '#ffffff', transparent: true, opacity: 0.7, depthTest: false }));
+    line.frustumCulled = false;
+    line.renderOrder = 9;
+    line.userData = { rover, pts };
+    scene.add(line);
+    apxs.trav[rover] = line;
+  }
+  for (const [rover, s] of Object.entries(apxs.sites)) {
+    const el = document.createElement('div');
+    el.className = 'badge';
+    el.style.setProperty('--c', ROVER_COLOR[rover] || '#fff');
+    el.innerHTML = `<b>${esc(rover)}</b> · ${s.count.toLocaleString()} APXS`;
+    el.addEventListener('pointerdown', (e) => e.stopPropagation());
+    el.onclick = (e) => { e.stopPropagation(); flyToSite(rover); };
+    const obj = new CSS2DObject(el);
+    obj.center.set(0.5, 1.3);
+    obj.position.copy(toVec(s.lat, s.lon, R * 1.002));
+    scene.add(obj);
+    apxs.badges.push({ rover, obj, dir: toVec(s.lat, s.lon, 1) });
+  }
+  drapeApxs();
+  $('apxs-view').innerHTML = apxs.views.map((v) => `<option value="${esc(v.id)}">${esc(v.label)}</option>`).join('');
+  setView(QS.get('view') || 'unusual');
+  $('apxs-section').hidden = false;
+  $('apxs-count').textContent = `${n.toLocaleString()} measurements by Curiosity, Spirit & Opportunity. Click a point for its chemistry.`;
+  apxs.ready = true;
+  post({ type: 'rm:ready', apxs: true, count: n });
+  const rid = QS.get('rock');
+  if (rid && apxs.index.has(rid)) selectRock(rid, { fly: true, info: !EMBED });
+  else if (apxs.sites[QS.get('site')]) flyToSite(QS.get('site'));
+}
+
+function drapeApxs() {
+  if (!apxs.pos) return;
+  const v = new THREE.Vector3();
+  apxs.rocks.forEach((r, i) => {
+    toVec(r.lat, r.lon, surfaceR(sampleHeight(r.lat, r.lon)) + 0.00003, v);
+    apxs.pos[i * 3] = v.x; apxs.pos[i * 3 + 1] = v.y; apxs.pos[i * 3 + 2] = v.z;
+  });
+  apxs.points.geometry.attributes.position.needsUpdate = true;
+  for (const line of Object.values(apxs.trav)) {
+    const arr = line.geometry.attributes.position.array;
+    line.userData.pts.forEach(([lat, lon], i) => {
+      toVec(lat, lon, surfaceR(sampleHeight(lat, lon)) + 0.00002, v);
+      arr[i * 3] = v.x; arr[i * 3 + 1] = v.y; arr[i * 3 + 2] = v.z;
+    });
+    line.geometry.attributes.position.needsUpdate = true;
+  }
+  if (apxs.you) placeYou();
+}
+
+const groupOf = (cls) => (apxs.view ? apxs.view.groups.findIndex((g) => g.classes.includes(cls)) : -1);
+const colorOf = (cls) => { const g = groupOf(cls); return g >= 0 ? apxs.slotColors[g] : apxs.otherColor; };
+
+function setView(id) {
+  if (!apxs.points) return;
+  apxs.view = apxs.views.find((v) => v.id === id) || apxs.views[0];
+  $('apxs-view').value = apxs.view.id;
+  apxs.hiddenGroups.clear();
+  apxs.showOther = true;
+  const col = apxs.points.geometry.attributes.aColor, c = new THREE.Color();
+  apxs.rocks.forEach((r, i) => {
+    apxs.group[i] = groupOf(r.deposit);
+    c.set(colorOf(r.deposit));
+    col.array[i * 3] = c.r; col.array[i * 3 + 1] = c.g; col.array[i * 3 + 2] = c.b;
+  });
+  col.needsUpdate = true;
+  buildLegend();
+  applyFilter();
+  post({ type: 'rm:view', view: apxs.view.id });
+}
+
+function applyFilter() {
+  if (!apxs.points) return;
+  const on = $('show-apxs').checked, rank = new Float32Array(apxs.rocks.length);
+  apxs.rocks.forEach((r, i) => {
+    const g = apxs.group[i], hi = apxs.highlight.has(r.id), sel = apxs.selected === r.id;
+    const shown = on && apxs.rovers.has(r.rover) && (g >= 0 ? !apxs.hiddenGroups.has(g) : apxs.showOther);
+    apxs.vis[i] = hi || sel || shown ? 1 : 0;
+    apxs.sizes[i] = sel ? PT.sel : hi ? PT.hi : g >= 0 ? PT.base : PT.other;
+    rank[i] = sel ? 3 : hi ? 2 : g >= 0 ? 1 : 0;
+  });
+  const order = apxs.points.geometry.index;
+  order.array.set([...order.array.keys()].sort((a, b) => rank[a] - rank[b]));
+  order.needsUpdate = true;
+  apxs.points.geometry.attributes.aVis.needsUpdate = true;
+  apxs.points.geometry.attributes.aSize.needsUpdate = true;
+}
+
+function buildLegend() {
+  const box = $('legend');
+  box.innerHTML = '';
+  const counts = apxs.view.groups.map(() => 0);
+  let other = 0;
+  apxs.rocks.forEach((r, i) => { const g = apxs.group[i]; g >= 0 ? counts[g]++ : other++; });
+  const row = (color, label, count, checked, onToggle, title) => {
+    const el = document.createElement('label');
+    el.className = 'lg';
+    if (title) el.title = title;
+    el.innerHTML = `<input type="checkbox"${checked ? ' checked' : ''}><span><i class="dot"></i></span><em></em>`;
+    el.querySelector('.dot').style.background = color;
+    el.querySelector('span').append(label);
+    el.querySelector('em').textContent = count.toLocaleString();
+    el.querySelector('input').onchange = (e) => onToggle(e.target.checked);
+    box.appendChild(el);
+  };
+  apxs.view.groups.forEach((g, i) => {
+    const title = g.classes.map((id) => { const c = apxs.classById.get(id); return c ? `${c.label}: ${c.rule}` : id; }).join('\n');
+    row(apxs.slotColors[i], g.label, counts[i], true, (on) => { on ? apxs.hiddenGroups.delete(i) : apxs.hiddenGroups.add(i); applyFilter(); }, title);
+  });
+  row(apxs.otherColor, apxs.view.id === 'unusual' ? 'Typical basaltic rock & soil' : 'Other measurements', other, true,
+    (on) => { apxs.showOther = on; applyFilter(); });
+}
+$('show-apxs').onchange = applyFilter;
+$('apxs-view').onchange = (e) => setView(e.target.value);
+document.querySelectorAll('[data-site]').forEach((b) => (b.onclick = () => flyToSite(b.dataset.site)));
+
+const groundR = (lat, lon) => surfaceR(sampleHeight(lat, lon));
+function flyToSite(rover) {
+  const s = apxs.sites[rover];
+  if (!s) return;
+  const [w, so, e, no] = s.bbox;
+  const km = Math.max((e - w) * Math.cos(s.lat * D2R), no - so) * D2R * R_KM;
+  flyTo((so + no) / 2, (w + e) / 2, groundR(s.lat, s.lon) + Math.max(km * 1.5, 4) / R_KM);
+}
+function fitTo(ids) {
+  let rs = ids.map((id) => apxs.rocks[apxs.index.get(id)]).filter(Boolean);
+  if (!rs.length) return;
+  const byRover = {};
+  rs.forEach((r) => (byRover[r.rover] ||= []).push(r));
+  rs = Object.values(byRover).sort((a, b) => b.length - a.length)[0];   // the rover site holding most of them
+  const lat = rs.reduce((a, r) => a + r.lat, 0) / rs.length, lon = rs.reduce((a, r) => a + r.lon, 0) / rs.length;
+  const km = Math.max(...rs.map((r) => Math.hypot((r.lat - lat), (r.lon - lon) * Math.cos(lat * D2R)) * D2R * R_KM));
+  flyTo(lat, lon, groundR(lat, lon) + clamp(km * 2.6, 2.5, 2500) / R_KM);
+}
+
+function selectRock(id, { fly = false, info: showPanel = !EMBED } = {}) {
+  const i = apxs.index.get(id);
+  if (i == null) return;
+  apxs.selected = id;
+  applyFilter();
+  const r = apxs.rocks[i];
+  if (fly) flyTo(r.lat, r.lon, groundR(r.lat, r.lon) + 3 / R_KM);
+  if (showPanel) showRockInfo(r);
+}
+
+async function showRockInfo(r) {
+  const cls = { ...(apxs.classById.get(r.deposit) || { label: r.deposit }), color: colorOf(r.deposit) };
+  $('info-title').textContent = r.name;
+  $('info-meta').innerHTML = `${esc(r.rover)} · sol ${r.sol} · ${esc(r.sample_type)}<br>${fmtLL(r.lat, r.lon)}`;
+  $('info-body').innerHTML = `<div class="chip"><i class="dot" style="background:${esc(cls.color)}"></i>${esc(cls.label)}</div><div class="note">Loading chemistry…</div>`;
+  info.style.display = 'block';
+  try {
+    const d = await fetch(`${API}/rocks/${encodeURIComponent(r.id)}`).then(okJson);
+    if (apxs.selected !== r.id) return;
+    const keys = ['SiO2', 'FeO', 'SO3', 'CaO', 'MgO', 'Al2O3', 'Na2O', 'MnO', 'Cl', 'P2O5'];
+    const rows = keys.filter((k) => d.chemistry[k] != null)
+      .map((k) => `<tr><td>${k}</td><td>${d.chemistry[k].toFixed(2)}</td><td class="note">wt%</td></tr>`).join('');
+    const sim = (d.similar || []).slice(0, 3)
+      .map((s) => `<a href="#" data-id="${esc(s.id)}">${esc(s.name)}</a> (${s.similarity}%)`).join(', ');
+    $('info-body').innerHTML = `
+      <div class="chip"><i class="dot" style="background:${esc(cls.color)}"></i>${esc(cls.label)}</div>
+      <div class="note">${esc(d.deposit_reason)} · data quality: ${esc(d.quality?.tier)}</div>
+      <table class="chem">${rows}</table>
+      <div class="photos" id="info-photos"><span class="note">Loading rover photos…</span></div>
+      ${sim ? `<div class="note">Most similar: ${sim}</div>` : ''}
+      <a class="cta" href="/?rock=${encodeURIComponent(r.id)}" target="_top">Open in Rock Match →</a>`;
+    $('info-body').querySelectorAll('a[data-id]').forEach((a) => {
+      a.onclick = (e) => { e.preventDefault(); selectRock(a.dataset.id, { fly: true }); };
+    });
+    const ph = await fetch(`${API}/rocks/${encodeURIComponent(r.id)}/photos`).then(okJson);
+    if (apxs.selected !== r.id || !$('info-photos')) return;
+    $('info-photos').innerHTML = ph.images?.length
+      ? ph.images.slice(0, 4).map((im) => `<a href="${esc(im.url)}" target="_blank" rel="noopener"><img src="${esc(im.thumb)}" alt="${esc(im.title)}" loading="lazy"></a>`).join('') +
+        `<div class="note">${esc(ph.credit)}</div>`
+      : `<span class="note">No close-up photos found for sol ${r.sol}.</span>`;
+  } catch (e) {
+    if (apxs.selected === r.id) $('info-body').insertAdjacentHTML('beforeend', `<div class="note">Could not load details (${esc(e.message)}).</div>`);
+  }
+}
+
+function setYou(lat, lon) {
+  apxs.you = { lat, lon };
+  if (!apxs.youObj) {
+    const el = document.createElement('div');
+    el.className = 'you';
+    el.innerHTML = '<span></span>You';
+    apxs.youObj = new CSS2DObject(el);
+    scene.add(apxs.youObj);
+  }
+  placeYou();
+}
+function placeYou() { toVec(apxs.you.lat, apxs.you.lon, groundR(apxs.you.lat, apxs.you.lon) + 0.00003, apxs.youObj.position); }
+function setPicking(on) { apxs.picking = on; document.body.classList.toggle('picking', on); }
+
+// screen-space pick of the nearest visible measurement
+function nearestRock(cx, cy, maxPx = 10) {
+  if (!apxs.ready || !apxs.points.visible) return -1;
+  const rect = renderer.domElement.getBoundingClientRect(), v = new THREE.Vector3();
+  const cp = camera.position, cl = cp.length(), cosH = horizonR() / cl;
+  let best = -1, bd = maxPx * maxPx;
+  for (let i = 0; i < apxs.rocks.length; i++) {
+    if (!apxs.vis[i]) continue;
+    const x = apxs.pos[i * 3], y = apxs.pos[i * 3 + 1], z = apxs.pos[i * 3 + 2];
+    if ((x * cp.x + y * cp.y + z * cp.z) / (Math.hypot(x, y, z) * cl) <= cosH) continue;
+    v.set(x, y, z).project(camera);
+    if (v.z < -1 || v.z > 1) continue;
+    const d2 = ((v.x + 1) / 2 * rect.width + rect.left - cx) ** 2 + ((1 - v.y) / 2 * rect.height + rect.top - cy) ** 2;
+    if (d2 < bd) { bd = d2; best = i; }
+  }
+  return best;
+}
+const tip = $('tip');
+function showTip(i, e) {
+  if (i < 0) { tip.style.display = 'none'; return; }
+  const r = apxs.rocks[i], c = apxs.classById.get(r.deposit);
+  tip.innerHTML = `<i class="dot" style="background:${esc(colorOf(r.deposit))}"></i><b>${esc(r.name)}</b><br>` +
+    `<span class="dim">${esc(r.rover)} · sol ${r.sol} · ${esc(c?.label || r.deposit)}</span>`;
+  tip.style.display = 'block';
+  tip.style.left = `${Math.min(e.clientX + 14, innerWidth - tip.offsetWidth - 8)}px`;
+  tip.style.top = `${Math.min(e.clientY + 14, innerHeight - tip.offsetHeight - 8)}px`;
+}
+
+function updateApxs() {
+  if (!apxs.ready) return;
+  const alt = altitudeU() * R_KM, cl = camera.position.length(), cosH = horizonR() / cl;
+  const camN = camera.position.clone().normalize();
+  apxsMat.uniforms.uHorizon.value = horizonR();
+  apxsMat.uniforms.uScale.value = renderer.getPixelRatio() * (alt < 40 ? 1.15 : alt < 400 ? 1 : 0.8);
+  apxs.points.visible = alt < 3000;
+  const showTrav = $('show-trav').checked;
+  for (const [rover, line] of Object.entries(apxs.trav)) {
+    const s = apxs.sites[rover];
+    line.visible = showTrav && !!s && alt < 4000 && toVec(s.lat, s.lon).dot(camN) > cosH;
+  }
+  for (const b of apxs.badges) b.obj.visible = alt > 350 && b.dir.dot(camN) > cosH + 0.2 * (1 - cosH);
+  if (apxs.youObj) apxs.youObj.visible = apxs.youObj.position.clone().normalize().dot(camN) > cosH;
+}
+
+window.addEventListener('message', (e) => {
+  if (e.origin !== location.origin || !e.data || typeof e.data.type !== 'string') return;
+  const m = e.data;
+  if (m.type === 'rm:highlight') {
+    apxs.highlight = new Set(m.ids || []);
+    if ('select' in m) apxs.selected = m.select || null;
+    applyFilter();
+    if (m.fit && m.ids?.length) fitTo(m.ids);
+  } else if (m.type === 'rm:select') selectRock(m.id, { fly: m.fly !== false, info: false });
+  else if (m.type === 'rm:fly') flyTo(m.lat, m.lon, groundR(m.lat, m.lon) + (m.alt_km || 20) / R_KM);
+  else if (m.type === 'rm:site') flyToSite(m.rover);
+  else if (m.type === 'rm:filter') {
+    if (m.view) setView(m.view);
+    if (Array.isArray(m.rovers)) apxs.rovers = new Set(m.rovers);
+    applyFilter();
+  } else if (m.type === 'rm:pick-position') setPicking(true);
+  else if (m.type === 'rm:set-position') setYou(m.lat, m.lon);
+  else if (m.type === 'rm:clear') { apxs.highlight.clear(); apxs.selected = null; applyFilter(); }
+  else if (m.type === 'rm:ping') post({ type: 'rm:ready', apxs: apxs.ready, count: apxs.rocks.length });
+});
+
+/* =====================================================================
    Main loop
    ===================================================================== */
 function resize() {
@@ -1034,9 +1570,14 @@ if (LAYERS[params.get('layer')]) $('layer').value = params.get('layer');
 if (params.has('exag')) $('exag').value = params.get('exag');
 if (params.has('tilt')) { $('tilt').value = params.get('tilt'); $('tilt').oninput({ target: $('tilt') }); }
 if (params.get('atmo') === '0') { $('show-atmo').checked = false; limb.visible = haze.visible = false; }
-if (params.get('sun') === 'lit') { $('sunmode').value = 'lit'; $('sunmode').onchange({ target: $('sunmode') }); }
+if (params.get('sun') === 'lit' || (params.get('embed') === '1' && params.get('sun') !== 'real')) {
+  $('sunmode').value = 'lit';
+  $('sunmode').onchange({ target: $('sunmode') });
+}
 onExag();
 setLayer();
+loadApxs();
+if (QS.get('debug') === '1') window.__globe = { queue, inflight, imgCache, live, roots, apxs, state, demCache, get active() { return active; } };
 
 let frame = 0, last = performance.now();
 renderer.setAnimationLoop((now) => {
@@ -1056,10 +1597,12 @@ renderer.setAnimationLoop((now) => {
     camera.position.copy(flight.from.clone().normalize().lerp(flight.to.clone().normalize(), k).normalize().multiplyScalar(len));
     if (flight.t >= 1) flight = null;
   }
-  // slow down rotate/zoom near the surface
-  const alt = Math.max(camera.position.length() - R, 1e-4);
-  controls.rotateSpeed = clamp(alt * 0.45, 0.01, 1);
-  controls.zoomSpeed = Math.log((1 + 0.85 * alt) / (1 + alt)) / Math.log(0.95);
+  // stay above the local terrain; slow down rotate/zoom near the surface
+  updateLocal();
+  controls.minDistance = localR + MIN_ALT;
+  const alt = altitudeU(), dist = camera.position.length();
+  controls.rotateSpeed = clamp(alt * 0.45, 0.0015, 1);
+  controls.zoomSpeed = Math.log((localR + 0.85 * alt) / dist) / Math.log(0.95);
   controls.update();
   if (tilt) camera.rotateX(tilt); // pitch up toward the horizon (north-facing)
   camera.updateMatrixWorld();
@@ -1071,7 +1614,9 @@ renderer.setAnimationLoop((now) => {
     barEl.style.width = `${(ready / 32) * 100}%`;
     if (holes === 0 && frame > 0) loadingEl.style.display = 'none';
   }
+  if (frame % 90 === 45 && apxs.ready) drapeApxs();   // re-drape as sharper elevation tiles arrive
   updateMarkers();
+  updateApxs();
   renderer.render(scene, camera);
   labelRenderer.render(scene, camera);
   frame++;

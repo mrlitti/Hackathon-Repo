@@ -3,3 +3,5 @@ __pycache__/
 backend/uploads/*
 !backend/uploads/.gitkeep
 .DS_Store
+backend/data/raw/
+backend/data/cache/
