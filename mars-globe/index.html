@@ -1,0 +1,1081 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mars Globe</title>
+<style>
+  :root { --bg:#000; --panel:rgba(8,8,8,.86); --line:#262626; --text:#ddd; --dim:#7a7a7a; --accent:#ff6a3d; --blue:#6cf; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; background:var(--bg); color:var(--text); font:13px/1.4 system-ui,sans-serif; overflow:hidden; }
+  #scene { position:fixed; inset:0; }
+  .panel { position:fixed; z-index:10; background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:12px; backdrop-filter:blur(6px); }
+  #controls { top:12px; left:12px; width:260px; max-height:calc(100% - 24px); overflow:auto; }
+  #controls header { display:flex; align-items:baseline; justify-content:space-between; cursor:pointer; }
+  #controls.collapsed .body { display:none; }
+  h1 { margin:0; font-size:15px; letter-spacing:4px; color:var(--accent); }
+  .sub { color:var(--dim); font-size:11px; }
+  h2 { margin:14px 0 6px; font-size:10px; letter-spacing:2px; text-transform:uppercase; color:var(--dim); }
+  label { display:flex; align-items:center; gap:8px; margin:3px 0; cursor:pointer; }
+  input[type=range] { width:100%; accent-color:var(--accent); }
+  select,button { width:100%; background:#111; color:var(--text); border:1px solid var(--line); border-radius:6px; padding:6px; font:inherit; cursor:pointer; }
+  button:hover,select:hover { border-color:var(--accent); }
+  button.on { background:var(--accent); color:#000; border-color:var(--accent); }
+  .row { display:flex; gap:6px; }
+  .row > * { flex:1; }
+  .note { color:var(--dim); font-size:11px; margin-top:4px; }
+  #readout { bottom:12px; left:12px; font-variant-numeric:tabular-nums; min-width:260px; }
+  #readout .dim { color:var(--dim); font-size:11px; }
+  #info { top:12px; right:12px; width:290px; display:none; }
+  #info h3 { margin:0 0 4px; color:var(--accent); font-size:15px; padding-right:24px; }
+  .close { position:absolute; top:6px; right:8px; width:auto; padding:2px 8px; }
+  #info .meta { color:var(--dim); margin-bottom:6px; font-size:12px; }
+  #measure { bottom:12px; left:50%; transform:translateX(-50%); width:340px; display:none; }
+  #measure canvas { width:100%; height:80px; display:block; margin-top:6px; }
+  #loading { top:50%; left:50%; transform:translate(-50%,-50%); text-align:center; min-width:240px; }
+  #bar { height:4px; background:#222; border-radius:2px; margin-top:8px; overflow:hidden; }
+  #bar div { height:100%; width:0; background:var(--accent); transition:width .15s; }
+  #credit { bottom:12px; right:12px; color:var(--dim); font-size:10px; max-width:330px; padding:8px 10px; }
+  .label { color:#fff; font-size:11px; padding:1px 6px; margin-left:10px; border-radius:3px; background:rgba(0,0,0,.55); white-space:nowrap; pointer-events:auto; cursor:pointer; }
+  .label.site { border-left:2px solid var(--accent); }
+  .label.feature { border-left:2px solid var(--blue); color:#cde; }
+  .label.moon { border-left:2px solid #aaa; color:#ccc; }
+  @media (max-width:700px) {
+    #controls { right:12px; width:auto; max-height:50%; }
+    #info { top:auto; bottom:110px; left:12px; right:12px; width:auto; }
+    #measure { width:auto; left:12px; right:12px; transform:none; bottom:110px; }
+    #credit { display:none; }
+    #readout { right:12px; min-width:0; }
+  }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="scene"></div>
+
+<div id="controls" class="panel">
+  <header id="controls-head"><h1>MARS</h1><span class="sub">NASA data globe ▾</span></header>
+  <div class="body">
+    <h2>Surface layer</h2>
+    <select id="layer">
+      <option value="viking">Viking color mosaic · optical</option>
+      <option value="themis">THEMIS day infrared · thermal</option>
+      <option value="mola">MOLA color elevation · topographic</option>
+      <option value="hillshade">MOLA + HRSC relief · shaded</option>
+    </select>
+    <div class="note" id="layer-note"></div>
+
+    <h2>Sharpness</h2>
+    <select id="sharp">
+      <option value="0">Balanced</option>
+      <option value="1">Sharp (more downloads)</option>
+    </select>
+
+    <h2>Terrain height</h2>
+    <input id="exag" type="range" min="0" max="10" step="0.5" value="3">
+    <div class="note" id="exag-val"></div>
+
+    <h2>View angle</h2>
+    <input id="tilt" type="range" min="0" max="75" step="1" value="0">
+    <div class="note" id="tilt-val">Looking straight down</div>
+
+    <h2>Sun &amp; time</h2>
+    <select id="sunmode">
+      <option value="real">Real sun position (Mars time)</option>
+      <option value="lit">Always lit</option>
+    </select>
+    <div id="time-block">
+      <input id="time" type="range" min="-24" max="24" step="0.1" value="0">
+      <div class="row"><button id="play">▶ Play</button><button id="now">Now</button></div>
+      <div class="note" id="time-val"></div>
+    </div>
+
+    <h2>Show</h2>
+    <label><input type="checkbox" id="show-sites" checked> Landing sites</label>
+    <label><input type="checkbox" id="show-features" checked> Named features</label>
+    <label><input type="checkbox" id="show-moons" checked> Phobos &amp; Deimos</label>
+    <label><input type="checkbox" id="show-grid"> Lat / lon grid</label>
+    <label><input type="checkbox" id="show-atmo" checked> Atmosphere</label>
+    <label><input type="checkbox" id="spin" checked> Auto-rotate</label>
+
+    <h2>Tools</h2>
+    <button id="measure-btn">📏 Measure distance &amp; profile</button>
+
+    <h2>Fly to</h2>
+    <select id="flyto"><option value="">Choose a place…</option></select>
+    <div style="height:6px"></div>
+    <button id="reset">Reset view</button>
+  </div>
+</div>
+
+<div id="readout" class="panel"><div id="ro-main">Hover the globe</div><div id="ro-sub" class="dim"></div></div>
+
+<div id="info" class="panel">
+  <button class="close" id="info-close">×</button>
+  <h3 id="info-title"></h3>
+  <div class="meta" id="info-meta"></div>
+  <div id="info-body"></div>
+</div>
+
+<div id="measure" class="panel">
+  <button class="close" id="measure-close">×</button>
+  <div id="measure-text">Click two points on the globe.</div>
+  <canvas id="profile" width="680" height="160"></canvas>
+</div>
+
+<div id="loading" class="panel">
+  <div>Loading NASA Mars data…</div>
+  <div id="bar"><div></div></div>
+</div>
+
+<div id="credit" class="panel">
+  Data: NASA/JPL-Caltech Mars Trek — Viking MDIM 2.1 (USGS), MGS MOLA, Mars Express HRSC (ESA/DLR/FU Berlin),
+  Mars Odyssey THEMIS (ASU). Phobos: Viking + HRSC. Sun: Mars24 algorithm (Allison &amp; McEwen 2000).
+  Moons shown 15× real size; distances to scale; moon positions illustrative.
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+
+/* =====================================================================
+   Constants & data sources
+   ===================================================================== */
+const R = 1, R_KM = 3389.5, D2R = Math.PI / 180, S = 256;
+const MARS_HOUR_MS = 88775.244e3 / 24;
+const TREK = 'https://trek.nasa.gov/tiles';
+const tileURL = (L, z, x, y) => `${TREK}/${L.body}/EQ/${L.id}/1.0.0/default/default028mm/${z}/${y}/${x}.${L.ext}`;
+
+const LAYERS = {
+  viking:    { body: 'Mars', id: 'Mars_Viking_MDIM21_ClrMosaic_global_232m', ext: 'jpg', max: 7,
+               note: 'Viking Orbiter color mosaic (USGS MDIM 2.1).' },
+  themis:    { body: 'Mars', id: 'THEMIS_DayIR_ControlledMosaics_100m_v2_oct2018', ext: 'png', max: 9,
+               note: 'Mars Odyssey THEMIS daytime infrared, 100 m. Bright = warm (rock), dark = cool (dust). Covers ~60°S–60°N.' },
+  mola:      { body: 'Mars', id: 'Mars_MGS_MOLA_ClrShade_merge_global_463m', ext: 'jpg', max: 7,
+               note: 'MOLA laser altimeter elevation. Blue = low, white = high.' },
+  hillshade: { body: 'Mars', id: 'Mars_MOLA_blend200ppx_HRSC_Shade_clon0dd_200mpp_lzw', ext: 'jpg', max: 8,
+               note: 'MOLA + Mars Express HRSC blended relief, 200 m.' },
+};
+// 8-bit MOLA DEM: grey 0..255 ↔ −8201 m .. +21241 m (checked against Gale, Meridiani, Olympus Mons).
+const DEM = { body: 'Mars', id: 'Mars_MGS_MOLA_DEM_mosaic_global_463m_8', ext: 'png', max: 5 };
+const DEM_MIN_M = -8201, DEM_RANGE_M = 29442;
+const DATUM_NORM = -DEM_MIN_M / DEM_RANGE_M;          // grey level of 0 m
+const TRUE_RELIEF = DEM_RANGE_M / 1000 / R_KM;         // full DEM range in Mars radii
+
+const PHOBOS_IMG = { body: 'Phobos', id: 'Phobos_Viking_Mosaic_40ppd_DLRcontrol', ext: 'jpg' };
+const PHOBOS_DEM = { body: 'Phobos', id: 'Phobos_ME_HRSC_DEM_Global_2ppd', ext: 'jpg' };
+
+/* places: planetocentric lat, east lon. tier 0 = always, 1 = global, 2 = regional, 3 = local */
+const SITES = [
+  { name: 'Curiosity (MSL)', lat: -4.5895, lon: 137.4417, year: 2012, body: 'Gale Crater, climbing Mount Sharp. Carries the Canadian-built APXS (CSA). Studied boxwork ridges in 2025.' },
+  { name: 'Perseverance (M2020)', lat: 18.4447, lon: 77.4508, year: 2021, body: 'Jezero Crater, an ancient lake and river delta. Caching samples for possible return to Earth.' },
+  { name: 'Spirit (MER-A)', lat: -14.5684, lon: 175.4726, year: 2004, body: 'Gusev Crater. Found hot-spring silica near Home Plate; stuck in soft sand at "Troy" in 2009. Carried APXS (CSA).' },
+  { name: 'Opportunity (MER-B)', lat: -1.9462, lon: -5.5266, year: 2004, body: 'Meridiani Planum. Hematite "blueberries", gypsum veins at Endeavour Crater; drove 45 km. Carried APXS (CSA).' },
+  { name: 'Phoenix', lat: 68.2188, lon: -125.7492, year: 2008, body: 'Northern plains. Dug into water ice. Canadian MET station and LIDAR (CSA) saw snow falling from clouds.' },
+  { name: 'InSight', lat: 4.5024, lon: 135.6234, year: 2018, body: 'Elysium Planitia. Seismometer recorded marsquakes and mapped the planet’s core and crust.' },
+  { name: 'Mars Pathfinder', lat: 19.13, lon: -33.22, year: 1997, body: 'Ares Vallis flood plain. Delivered Sojourner, the first Mars rover.' },
+  { name: 'Viking 1', lat: 22.27, lon: -47.95, year: 1976, body: 'Chryse Planitia. First successful long-duration Mars lander.' },
+  { name: 'Viking 2', lat: 47.64, lon: 134.29, year: 1976, body: 'Utopia Planitia. Photographed winter frost on the ground.' },
+];
+const FEATURES = [
+  { name: 'Olympus Mons', lat: 18.65, lon: -133.8, tier: 1, body: 'Largest volcano in the solar system, ~22 km above the surrounding plains.' },
+  { name: 'Valles Marineris', lat: -13.9, lon: -59.2, tier: 1, body: 'Canyon system ~4,000 km long and up to 7 km deep.' },
+  { name: 'Hellas Planitia', lat: -42.4, lon: 70.5, tier: 1, body: 'Giant impact basin and the lowest region on Mars (about −8 km).' },
+  { name: 'Argyre Planitia', lat: -49.7, lon: -43.4, tier: 1, body: 'Large impact basin in the southern highlands.' },
+  { name: 'Elysium Mons', lat: 25.02, lon: 147.21, tier: 1, body: 'Main volcano of the Elysium rise.' },
+  { name: 'Utopia Planitia', lat: 49.7, lon: 118.0, tier: 1, body: 'Largest impact basin on Mars; radar finds buried ice.' },
+  { name: 'Planum Boreum', lat: 88, lon: 15, tier: 1, body: 'North polar ice cap: water ice up to ~3 km thick.' },
+  { name: 'Planum Australe', lat: -84, lon: 160, tier: 1, body: 'South polar cap: water ice with a seasonal CO₂ frost layer.' },
+  { name: 'Arsia Mons', lat: -8.26, lon: -120.09, tier: 2, body: 'Southernmost Tharsis volcano.' },
+  { name: 'Pavonis Mons', lat: 1.48, lon: -112.96, tier: 2, body: 'Central Tharsis volcano, sits on the equator.' },
+  { name: 'Ascraeus Mons', lat: 11.92, lon: -104.08, tier: 2, body: 'Northern Tharsis volcano.' },
+  { name: 'Alba Mons', lat: 40.5, lon: -109.6, tier: 2, body: 'Broadest volcano on Mars, very low slopes.' },
+  { name: 'Noctis Labyrinthus', lat: -7, lon: -102, tier: 2, body: 'Maze of fault-bounded canyons at the head of Valles Marineris.' },
+  { name: 'Syrtis Major Planum', lat: 8.4, lon: 69.5, tier: 2, body: 'Dark volcanic plain, visible from Earth with telescopes.' },
+  { name: 'Isidis Planitia', lat: 13.9, lon: 87.0, tier: 2, body: 'Impact basin; Jezero lies on its western rim.' },
+  { name: 'Arabia Terra', lat: 21, lon: 6, tier: 2, body: 'Ancient, heavily cratered highlands with layered deposits.' },
+  { name: 'Chryse Planitia', lat: 28.4, lon: -40, tier: 2, body: 'Low plain where giant outflow channels drained.' },
+  { name: 'Acidalia Planitia', lat: 46.7, lon: -22, tier: 2, body: 'Northern lowland plain.' },
+  { name: 'Amazonis Planitia', lat: 24.8, lon: -164, tier: 2, body: 'Very smooth young lava plain.' },
+  { name: 'Terra Sirenum', lat: -39.7, lon: -150, tier: 2, body: 'Southern highlands with chloride salt deposits.' },
+  { name: 'Elysium Planitia', lat: 3.0, lon: 154.7, tier: 2, body: 'Young volcanic plain; InSight landing region.' },
+  { name: 'Meridiani Planum', lat: 0.2, lon: -2.5, tier: 2, body: 'Hematite-rich plain explored by Opportunity.' },
+  { name: 'Kasei Valles', lat: 24.6, lon: -65, tier: 2, body: 'One of the largest outflow channel systems.' },
+  { name: 'Medusae Fossae', lat: -3.2, lon: -163, tier: 2, body: 'Soft, wind-eroded deposit, possibly volcanic ash.' },
+  { name: 'Huygens Crater', lat: -13.9, lon: 55.6, tier: 2, body: '450 km impact crater in the southern highlands.' },
+  { name: 'Schiaparelli Crater', lat: -2.7, lon: 16.7, tier: 2, body: '460 km impact crater near the equator.' },
+  { name: 'Gale Crater', lat: -5.4, lon: 137.8, tier: 3, body: '154 km crater with Mount Sharp at its center.' },
+  { name: 'Mount Sharp', lat: -5.08, lon: 137.85, tier: 3, body: 'Aeolis Mons, ~5 km layered mound recording Mars’ drying climate.' },
+  { name: 'Jezero Crater', lat: 18.38, lon: 77.58, tier: 3, body: '45 km crater with an ancient lake delta.' },
+  { name: 'Gusev Crater', lat: -14.5, lon: 175.4, tier: 3, body: '166 km crater, once possibly a lake; Spirit’s home.' },
+  { name: 'Endeavour Crater', lat: -2.28, lon: -5.23, tier: 3, body: '22 km crater; Opportunity found gypsum veins on its rim.' },
+  { name: 'Eberswalde Crater', lat: -24, lon: -33, tier: 3, body: 'Contains one of the best-preserved river deltas on Mars.' },
+  { name: 'Holden Crater', lat: -26.4, lon: -34.0, tier: 3, body: 'Crater with lake sediments and alluvial fans.' },
+  { name: 'Mawrth Vallis', lat: 22.6, lon: -16.5, tier: 3, body: 'Ancient channel exposing thick clay-bearing layers.' },
+  { name: 'Ares Vallis', lat: 10.3, lon: -25.8, tier: 3, body: 'Outflow channel; Pathfinder landed at its mouth.' },
+  { name: 'Nili Fossae', lat: 22.6, lon: 76.8, tier: 3, body: 'Troughs rich in clays and carbonates.' },
+  { name: 'Lyot Crater', lat: 50.8, lon: 29.3, tier: 3, body: 'Deepest point in the northern hemisphere.' },
+];
+
+/* =====================================================================
+   Helpers
+   ===================================================================== */
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const mod = (a, n) => ((a % n) + n) % n;
+const wrap180 = (l) => mod(l + 180, 360) - 180;
+const fmtLL = (lat, lon) => `${Math.abs(lat).toFixed(2)}°${lat >= 0 ? 'N' : 'S'}, ${Math.abs(lon).toFixed(2)}°${lon >= 0 ? 'E' : 'W'}`;
+const fmtH = (h) => { h = mod(h, 24); const m = Math.floor((h % 1) * 60); return `${String(Math.floor(h)).padStart(2, '0')}:${String(m).padStart(2, '0')}`; };
+const fmtM = (m) => `${m >= 0 ? '+' : '−'}${Math.abs(Math.round(m)).toLocaleString()} m`;
+
+// lat/lon ↔ xyz, matching three.js SphereGeometry / equirectangular UVs (+y = north, lon 0 = +x)
+function toVec(lat, lon, r = R, out = new THREE.Vector3()) {
+  const la = lat * D2R, lo = lon * D2R;
+  return out.set(r * Math.cos(la) * Math.cos(lo), r * Math.sin(la), -r * Math.cos(la) * Math.sin(lo));
+}
+function toLatLon(v) {
+  const p = v.clone().normalize();
+  return { lat: Math.asin(clamp(p.y, -1, 1)) / D2R, lon: Math.atan2(-p.z, p.x) / D2R };
+}
+
+/* Mars24 (Allison & McEwen 2000; NASA GISS) — sun position on Mars for a given UTC time */
+function mars24(ms) {
+  const jdTT = ms / 86400000 + 2440587.5 + 69.184 / 86400;
+  const dt = jdTT - 2451545.0;
+  const M = (19.3871 + 0.52402073 * dt) * D2R;
+  const aFMS = 270.3871 + 0.524038496 * dt;
+  const A = [0.0071, 0.0057, 0.0039, 0.0037, 0.0021, 0.0020, 0.0018];
+  const T = [2.2353, 2.7543, 1.1177, 15.7866, 2.1354, 2.4694, 32.8493];
+  const P = [49.409, 168.173, 191.837, 21.736, 15.704, 95.528, 49.095];
+  let pbs = 0;
+  for (let i = 0; i < 7; i++) pbs += A[i] * Math.cos((0.985626 * dt / T[i] + P[i]) * D2R);
+  const eoc = (10.691 + 3.0e-7 * dt) * Math.sin(M) + 0.623 * Math.sin(2 * M) + 0.050 * Math.sin(3 * M)
+            + 0.005 * Math.sin(4 * M) + 0.0005 * Math.sin(5 * M) + pbs;
+  const Ls = mod(aFMS + eoc, 360), L = Ls * D2R;
+  const eot = 2.861 * Math.sin(2 * L) - 0.071 * Math.sin(4 * L) + 0.002 * Math.sin(6 * L) - eoc; // degrees
+  const msd = (jdTT - 2405522.0028779) / 1.0274912517;
+  const mtc = mod(24 * msd, 24);
+  const subLonW = mod(mtc * 15 + eot + 180, 360);
+  const subLat = Math.asin(0.42565 * Math.sin(L)) / D2R + 0.25 * Math.sin(L);
+  return { Ls, mtc, eot, msd, subLat, subLon: wrap180(-subLonW) };
+}
+const SEASONS = ['northern spring', 'northern summer', 'northern autumn', 'northern winter'];
+const localSolarTime = (m, lonE) => mod(m.mtc + lonE / 15 + m.eot / 15, 24);
+
+/* =====================================================================
+   Renderer, scene, camera
+   ===================================================================== */
+const container = document.getElementById('scene');
+const renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.15;
+container.appendChild(renderer.domElement);
+const MAX_ANISO = renderer.capabilities.getMaxAnisotropy();
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.domElement.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:5';
+document.body.appendChild(labelRenderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(45, 1, 1e-5, 400);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.enablePan = false;
+controls.maxDistance = 14;
+controls.autoRotate = true;
+controls.autoRotateSpeed = 0.3;
+
+const state = {
+  layer: LAYERS.viking, exag: 3, sharp: false, sunMode: 'real',
+  offsetH: 0, playing: false, measuring: false, m24: mars24(Date.now()),
+};
+
+/* lights */
+const sunDir = new THREE.Vector3(1, 0, 0);
+const sunLight = new THREE.DirectionalLight(0xfff1e0, 2.8);
+const ambient = new THREE.AmbientLight(0xffffff, 0.03);
+scene.add(sunLight, ambient);
+
+/* sun glow sprite */
+const sunSprite = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const g = c.getContext('2d'), grd = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  grd.addColorStop(0, 'rgba(255,255,255,1)'); grd.addColorStop(0.08, 'rgba(255,245,225,0.95)');
+  grd.addColorStop(0.25, 'rgba(255,200,140,0.25)'); grd.addColorStop(1, 'rgba(255,160,90,0)');
+  g.fillStyle = grd; g.fillRect(0, 0, 128, 128);
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), blending: THREE.AdditiveBlending, depthWrite: false }));
+  s.scale.setScalar(14);
+  scene.add(s);
+  return s;
+})();
+
+/* starfield: three magnitude classes with stellar colours */
+{
+  const tint = [[0.75, 0.82, 1], [1, 1, 1], [1, 0.95, 0.85], [1, 0.85, 0.7], [1, 0.75, 0.6]];
+  [[7000, 1.0, 0.55], [1200, 1.6, 0.8], [150, 2.6, 1]].forEach(([n, size, bright]) => {
+    const pos = new Float32Array(n * 3), col = new Float32Array(n * 3), v = new THREE.Vector3();
+    for (let i = 0; i < n; i++) {
+      v.randomDirection().multiplyScalar(200);
+      pos.set([v.x, v.y, v.z], i * 3);
+      const t = tint[Math.floor(Math.random() * tint.length)], b = bright * (0.4 + Math.random() * 0.6);
+      col.set([t[0] * b, t[1] * b, t[2] * b], i * 3);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    scene.add(new THREE.Points(g, new THREE.PointsMaterial({ size, sizeAttenuation: false, vertexColors: true, toneMapped: false })));
+  });
+}
+
+/* =====================================================================
+   Atmosphere (sun-aware limb glow + surface haze)
+   ===================================================================== */
+const atmoVert = `
+  #include <common>
+  #include <logdepthbuf_pars_vertex>
+  varying vec3 vN; varying vec3 vV;
+  void main() {
+    vec4 wp = modelMatrix * vec4(position, 1.0);
+    vN = normalize(mat3(modelMatrix) * normal);
+    vV = normalize(cameraPosition - wp.xyz);
+    gl_Position = projectionMatrix * viewMatrix * wp;
+    #include <logdepthbuf_vertex>
+  }`;
+const sunUniform = { value: sunDir };
+const limb = new THREE.Mesh(new THREE.SphereGeometry(R * 1.025, 128, 64), new THREE.ShaderMaterial({
+  uniforms: { sunDir: sunUniform }, side: THREE.BackSide, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  vertexShader: atmoVert,
+  fragmentShader: `
+    #include <logdepthbuf_pars_fragment>
+    uniform vec3 sunDir; varying vec3 vN; varying vec3 vV;
+    void main() {
+      #include <logdepthbuf_fragment>
+      float d = clamp(-dot(vN, vV) / 0.22, 0.0, 1.0);
+      float i = pow(d, 3.0);
+      float lit = smoothstep(-0.35, 0.3, dot(vN, sunDir));
+      vec3 col = mix(vec3(0.45, 0.55, 0.85), vec3(1.0, 0.64, 0.42), d);
+      gl_FragColor = vec4(col * i * lit * 1.3, 1.0);
+    }`,
+}));
+const haze = new THREE.Mesh(new THREE.SphereGeometry(R * 1.001, 128, 64), new THREE.ShaderMaterial({
+  uniforms: { sunDir: sunUniform }, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  vertexShader: atmoVert,
+  fragmentShader: `
+    #include <logdepthbuf_pars_fragment>
+    uniform vec3 sunDir; varying vec3 vN; varying vec3 vV;
+    void main() {
+      #include <logdepthbuf_fragment>
+      float f = pow(1.0 - clamp(dot(vN, vV), 0.0, 1.0), 4.0);
+      float lit = smoothstep(-0.12, 0.35, dot(vN, sunDir));
+      gl_FragColor = vec4(vec3(1.0, 0.72, 0.52) * f * lit * 0.5, 1.0);
+    }`,
+}));
+scene.add(limb, haze);
+
+/* =====================================================================
+   Tile loading: coarse levels first (fast full globe), then newest requests
+   first (what you're looking at now); stale requests are dropped.
+   ===================================================================== */
+const queue = [];
+let active = 0;
+const MAX_ACTIVE = 12;
+function requestImage(url, wanted = () => true, z = 0) {
+  return new Promise((resolve) => { queue.push({ url, resolve, wanted, z }); pump(); });
+}
+function nextJob() {
+  let best = -1;
+  for (let i = queue.length - 1; i >= 0; i--) if (best < 0 || queue[i].z < queue[best].z) best = i;
+  return queue.splice(best, 1)[0];
+}
+function pump() {
+  while (active < MAX_ACTIVE && queue.length) {
+    const job = nextJob();
+    if (!job.wanted()) { job.resolve(null); continue; }
+    active++;
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => { active--; job.resolve(img); pump(); };
+    img.onerror = () => { active--; job.resolve(null); pump(); };
+    img.src = job.url;
+  }
+}
+const scratch = document.createElement('canvas');
+scratch.width = scratch.height = S;
+const sctx = scratch.getContext('2d', { willReadFrequently: true });
+
+/* =====================================================================
+   Elevation tiles: heights (CPU), displacement + object-space normal maps (GPU)
+   ===================================================================== */
+const demCache = new Map();
+const demKey = (z, x, y) => `${z}/${x}/${y}`;
+
+function getDem(z, x, y) {
+  const k = demKey(z, x, y);
+  let e = demCache.get(k);
+  if (!e) {
+    e = { z, x, y, refs: 0, heights: null, disp: null, normal: null, normalK: 0, users: new Set() };
+    e.promise = requestImage(tileURL(DEM, z, x, y), () => true, z).then((img) => { buildDem(e, img); return e; });
+    demCache.set(k, e);
+  }
+  e.used = performance.now();
+  return e;
+}
+
+function blur(src) {
+  const out = new Float32Array(S * S);
+  for (let j = 0; j < S; j++) for (let i = 0; i < S; i++) {
+    let s = 0;
+    for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++)
+      s += src[clamp(j + dj, 0, S - 1) * S + clamp(i + di, 0, S - 1)];
+    out[j * S + i] = s / 9;
+  }
+  return out;
+}
+
+function buildDem(e, img) {
+  const raw = new Float32Array(S * S);
+  if (img) {
+    sctx.clearRect(0, 0, S, S);
+    sctx.drawImage(img, 0, 0);
+    const d = sctx.getImageData(0, 0, S, S).data;
+    for (let i = 0; i < S * S; i++) raw[i] = d[i * 4] / 255;
+  } else raw.fill(DATUM_NORM);
+  e.heights = blur(blur(raw)); // smooths 8-bit terracing
+  const half = new Uint16Array(S * S);
+  for (let j = 0; j < S; j++) for (let i = 0; i < S; i++)
+    half[(S - 1 - j) * S + i] = THREE.DataUtils.toHalfFloat(e.heights[j * S + i]);
+  e.disp = new THREE.DataTexture(half, S, S, THREE.RedFormat, THREE.HalfFloatType);
+  e.disp.minFilter = e.disp.magFilter = THREE.LinearFilter;
+  e.disp.needsUpdate = true;
+  e.normal = new THREE.DataTexture(new Uint8Array(S * S * 4), S, S);
+  e.normal.minFilter = THREE.LinearMipmapLinearFilter;
+  e.normal.magFilter = THREE.LinearFilter;
+  e.normal.generateMipmaps = true;
+  computeNormals(e);
+}
+
+// Object-space normals from the height field: n = up − gx·east − gy·north
+function computeNormals(e) {
+  const k = Math.max(state.exag, 1);
+  if (e.normalK === k) return;
+  e.normalK = k;
+  const { z, x, y, heights: h } = e;
+  const pd = 180 / 2 ** z / S, dyM = pd * D2R * R_KM * 1000;
+  const data = e.normal.image.data;
+  for (let j = 0; j < S; j++) {
+    const lat = (90 - (y * S + j + 0.5) * pd) * D2R, sl = Math.sin(lat), cl = Math.cos(lat);
+    const dxM = Math.max(dyM * cl, 1), jn = Math.max(j - 1, 0), js = Math.min(j + 1, S - 1);
+    for (let i = 0; i < S; i++) {
+      const lon = (-180 + (x * S + i + 0.5) * pd) * D2R, so = Math.sin(lon), co = Math.cos(lon);
+      const iw = Math.max(i - 1, 0), ie = Math.min(i + 1, S - 1);
+      const gx = (h[j * S + ie] - h[j * S + iw]) * DEM_RANGE_M / ((ie - iw) * dxM) * k;
+      const gy = (h[jn * S + i] - h[js * S + i]) * DEM_RANGE_M / ((js - jn) * dyM) * k;
+      let nx = cl * co + gx * so + gy * sl * co;
+      let ny = sl - gy * cl;
+      let nz = -cl * so + gx * co - gy * sl * so;
+      const l = Math.hypot(nx, ny, nz);
+      const o = ((S - 1 - j) * S + i) * 4;
+      data[o] = (nx / l * 0.5 + 0.5) * 255;
+      data[o + 1] = (ny / l * 0.5 + 0.5) * 255;
+      data[o + 2] = (nz / l * 0.5 + 0.5) * 255;
+      data[o + 3] = 255;
+    }
+  }
+  e.normal.needsUpdate = true;
+  e.users.forEach((t) => (t.needsUpdate = true));
+}
+
+// Best available elevation (0..1 normalised) at a point
+function sampleHeight(lat, lon) {
+  lon = wrap180(lon);
+  for (let z = DEM.max; z >= 0; z--) {
+    const span = 180 / 2 ** z;
+    const x = Math.min(Math.floor((lon + 180) / span), 2 ** (z + 1) - 1);
+    const y = Math.min(Math.floor((90 - lat) / span), 2 ** z - 1);
+    const e = demCache.get(demKey(z, x, y));
+    if (!e || !e.heights) continue;
+    const fx = clamp(((lon + 180) / span - x) * S - 0.5, 0, S - 1), fy = clamp(((90 - lat) / span - y) * S - 0.5, 0, S - 1);
+    const i0 = Math.floor(fx), j0 = Math.floor(fy), i1 = Math.min(i0 + 1, S - 1), j1 = Math.min(j0 + 1, S - 1);
+    const tx = fx - i0, ty = fy - j0, h = e.heights;
+    return (h[j0 * S + i0] * (1 - tx) + h[j0 * S + i1] * tx) * (1 - ty) + (h[j1 * S + i0] * (1 - tx) + h[j1 * S + i1] * tx) * ty;
+  }
+  return null;
+}
+const heightToM = (n) => n * DEM_RANGE_M + DEM_MIN_M;
+const dispScale = () => TRUE_RELIEF * state.exag;
+const surfaceR = (n) => R + ((n ?? DATUM_NORM) - DATUM_NORM) * dispScale();
+
+function evictDem() {
+  if (demCache.size < 350) return;
+  [...demCache.values()].filter((e) => e.refs <= 0 && e.z > 2 && e.heights)
+    .sort((a, b) => a.used - b.used).slice(0, demCache.size - 300)
+    .forEach((e) => { e.disp.dispose(); e.normal.dispose(); demCache.delete(demKey(e.z, e.x, e.y)); });
+}
+
+/* =====================================================================
+   Quadtree terrain patches (one patch = one NASA WMTS tile)
+   ===================================================================== */
+const globe = new THREE.Group();
+scene.add(globe);
+const live = new Set();
+const blankTex = new THREE.DataTexture(new Uint8Array([30, 24, 20, 255]), 1, 1);
+blankTex.colorSpace = THREE.SRGBColorSpace;
+blankTex.needsUpdate = true;
+const SEG = 32, SKIRT = 0.012;
+
+function patchGeometry(latN, latS, lonW, lonE) {
+  const pos = [], nor = [], uv = [], idx = [], v = new THREE.Vector3();
+  const add = (x, y, z, r, u, w) => { pos.push(x * r, y * r, z * r); nor.push(x, y, z); uv.push(u, w); return pos.length / 3 - 1; };
+  for (let j = 0; j <= SEG; j++) for (let i = 0; i <= SEG; i++) {
+    toVec(latN + (latS - latN) * j / SEG, lonW + (lonE - lonW) * i / SEG, 1, v);
+    add(v.x, v.y, v.z, R, i / SEG, 1 - j / SEG);
+  }
+  const id = (i, j) => j * (SEG + 1) + i;
+  for (let j = 0; j < SEG; j++) for (let i = 0; i < SEG; i++)
+    idx.push(id(i, j), id(i, j + 1), id(i + 1, j), id(i + 1, j), id(i, j + 1), id(i + 1, j + 1));
+  // skirts hide cracks between neighbouring patches
+  const edges = [[], [], [], []];
+  for (let k = 0; k <= SEG; k++) { edges[0].push(id(k, 0)); edges[1].push(id(k, SEG)); edges[2].push(id(0, k)); edges[3].push(id(SEG, k)); }
+  edges.forEach((edge) => {
+    const sk = edge.map((a) => add(nor[a * 3], nor[a * 3 + 1], nor[a * 3 + 2], R * (1 - SKIRT), uv[a * 2], uv[a * 2 + 1]));
+    for (let k = 0; k < edge.length - 1; k++) {
+      const a = edge[k], b = edge[k + 1], c = sk[k], d = sk[k + 1];
+      idx.push(a, b, c, b, d, c, a, c, b, b, c, d);
+    }
+  });
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setIndex(idx);
+  g.computeBoundingSphere();
+  g.boundingSphere.radius += 0.1;
+  return g;
+}
+
+class Node {
+  constructor(z, x, y) {
+    Object.assign(this, { z, x, y, children: null, mesh: null, ready: false, dead: false });
+    const span = 180 / 2 ** z;
+    this.lonW = -180 + x * span; this.lonE = this.lonW + span;
+    this.latN = 90 - y * span;   this.latS = this.latN - span;
+    this.size = span * D2R;
+    this.center = toVec((this.latN + this.latS) / 2, (this.lonW + this.lonE) / 2, 1);
+    this.load();
+  }
+  async load() {
+    const dz = Math.min(this.z, DEM.max), k = this.z - dz;
+    this.dem = getDem(dz, this.x >> k, this.y >> k);
+    this.dem.refs++;
+    const [img] = await Promise.all([requestImage(tileURL(state.layer, this.z, this.x, this.y), () => !this.dead, this.z), this.dem.promise]);
+    if (this.dead) return;
+    const map = img ? new THREE.Texture(img) : blankTex;
+    if (img) { map.colorSpace = THREE.SRGBColorSpace; map.anisotropy = MAX_ANISO; map.needsUpdate = true; }
+    const sub = 1 / 2 ** k, ox = (this.x % 2 ** k) * sub, oy = 1 - (this.y % 2 ** k) * sub - sub;
+    const disp = this.dem.disp.clone(), nrm = this.dem.normal.clone();
+    [disp, nrm].forEach((t) => { t.repeat.set(sub, sub); t.offset.set(ox, oy); });
+    this.dem.users.add(nrm);
+    const mat = new THREE.MeshStandardMaterial({
+      map, displacementMap: disp, normalMap: nrm, normalMapType: THREE.ObjectSpaceNormalMap, roughness: 1, metalness: 0,
+    });
+    applyDisp(mat);
+    this.mesh = new THREE.Mesh(patchGeometry(this.latN, this.latS, this.lonW, this.lonE), mat);
+    this.mesh.visible = false;
+    globe.add(this.mesh);
+    this.ready = true;
+    live.add(this);
+  }
+  split() {
+    this.children = [0, 1, 2, 3].map((q) => new Node(this.z + 1, this.x * 2 + (q & 1), this.y * 2 + (q >> 1)));
+  }
+  merge() { this.children.forEach((c) => c.dispose()); this.children = null; }
+  dispose() {
+    this.dead = true;
+    if (this.children) this.merge();
+    if (this.mesh) {
+      globe.remove(this.mesh);
+      const m = this.mesh.material;
+      this.mesh.geometry.dispose();
+      if (m.map !== blankTex) m.map.dispose();
+      this.dem.users.delete(m.normalMap);
+      m.displacementMap.dispose(); m.normalMap.dispose(); m.dispose();
+    }
+    if (this.dem) this.dem.refs--;
+    live.delete(this);
+  }
+}
+
+function applyDisp(m) {
+  const s = dispScale();
+  m.displacementScale = s;
+  m.displacementBias = -s * DATUM_NORM;
+}
+
+let roots = [];
+function buildRoots() {
+  roots.forEach((r) => r.dispose());
+  roots = [];
+  for (let y = 0; y < 4; y++) for (let x = 0; x < 8; x++) roots.push(new Node(2, x, y));
+}
+
+/* level-of-detail selection */
+const frustum = new THREE.Frustum(), pv = new THREE.Matrix4(), bsphere = new THREE.Sphere();
+let deepest = 2, holes = 1;
+function updateLOD() {
+  pv.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+  frustum.setFromProjectionMatrix(pv);
+  const cam = camera.position, camDist = cam.length(), camN = cam.clone().normalize();
+  const horizon = Math.acos(clamp(R / camDist, -1, 1));
+  const pxPerRad = innerHeight / (camera.fov * D2R);
+  const budget = state.sharp ? 170 : 290;
+  const maxZ = state.layer.max;
+  deepest = 0; holes = 0;
+
+  const wants = (n) => {
+    if (n.z >= maxZ || live.size > 1100) return false;
+    const ang = Math.acos(clamp(n.center.dot(camN), -1, 1));
+    if (ang - n.size * 0.75 > horizon + 0.03) return false;
+    bsphere.center.copy(n.center);
+    bsphere.radius = n.size * 0.75 + 0.06;
+    if (!frustum.intersectsSphere(bsphere)) return false;
+    const d = Math.max(cam.distanceTo(n.center) - n.size * 0.5, 1e-4);
+    return (n.size / d) * pxPerRad > budget;
+  };
+  const visit = (n) => {
+    if (wants(n)) {
+      if (!n.children) n.split();
+      if (n.children.every((c) => c.ready)) { if (n.mesh) n.mesh.visible = false; n.children.forEach(visit); return; }
+    } else if (n.children) n.merge();
+    if (n.mesh) { n.mesh.visible = true; deepest = Math.max(deepest, n.z); }
+    else if (Math.acos(clamp(n.center.dot(camN), -1, 1)) - n.size * 0.75 < horizon) holes++;
+  };
+  roots.forEach(visit);
+}
+
+/* =====================================================================
+   Lat/lon grid
+   ===================================================================== */
+const grid = new THREE.Group();
+{
+  const mat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.16 });
+  const eq = new THREE.LineBasicMaterial({ color: 0xff6a3d, transparent: true, opacity: 0.45 });
+  const line = (pts, m) => grid.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), m));
+  for (let lat = -75; lat <= 75; lat += 15) {
+    const pts = []; for (let lon = -180; lon <= 180; lon += 2) pts.push(toVec(lat, lon));
+    line(pts, lat === 0 ? eq : mat);
+  }
+  for (let lon = -180; lon < 180; lon += 15) {
+    const pts = []; for (let lat = -90; lat <= 90; lat += 2) pts.push(toVec(lat, lon));
+    line(pts, lon === 0 ? eq : mat);
+  }
+  grid.visible = false;
+  scene.add(grid);
+}
+
+/* =====================================================================
+   Markers & labels
+   ===================================================================== */
+const dotGeo = new THREE.SphereGeometry(1, 12, 8);
+const siteMat = new THREE.MeshBasicMaterial({ color: 0xff6a3d });
+const featMat = new THREE.MeshBasicMaterial({ color: 0x66ccff });
+const markers = [];
+function addMarker(place, kind) {
+  const dot = new THREE.Mesh(dotGeo, kind === 'site' ? siteMat : featMat);
+  const el = document.createElement('div');
+  el.className = `label ${kind}`;
+  el.textContent = place.name;
+  el.addEventListener('pointerdown', (e) => e.stopPropagation());
+  el.onclick = (e) => { e.stopPropagation(); showInfo(place, kind); };
+  const label = new CSS2DObject(el);
+  label.center.set(0, 0.5);
+  dot.add(label);
+  dot.userData = { place, kind, label, tier: kind === 'site' ? 0 : place.tier };
+  scene.add(dot);
+  markers.push(dot);
+}
+SITES.forEach((s) => addMarker(s, 'site'));
+FEATURES.forEach((f) => addMarker(f, 'feature'));
+
+function placeMarkers() {
+  markers.forEach((m) => { const p = m.userData.place; toVec(p.lat, p.lon, surfaceR(sampleHeight(p.lat, p.lon)) + 0.002, m.position); });
+  grid.scale.setScalar(R + (1 - DATUM_NORM) * dispScale() + 0.002);
+}
+
+const show = { site: true, feature: true };
+const tmpV = new THREE.Vector3();
+function updateMarkers() {
+  const camN = camera.position.clone().normalize(), alt = camera.position.length() - R;
+  const tierOk = [true, true, alt < 2.2, alt < 0.7];
+  markers.forEach((m) => {
+    const { kind, label, tier } = m.userData;
+    tmpV.copy(m.position).normalize();
+    const facing = tmpV.dot(camN) > R / camera.position.length() + 0.15; // hide labels near the limb
+    const on = show[kind] && facing && tierOk[tier];
+    m.visible = on; label.visible = on;
+    m.scale.setScalar(camera.position.distanceTo(m.position) * 0.0045);
+  });
+}
+
+/* =====================================================================
+   Phobos & Deimos (enlarged 15×, orbit radii to scale)
+   ===================================================================== */
+const MOON_SCALE = 15;
+const moons = new THREE.Group();
+scene.add(moons);
+const moonList = [];
+function moonLabel(name, mesh) {
+  const el = document.createElement('div'); el.className = 'label moon'; el.textContent = name;
+  const l = new CSS2DObject(el); l.center.set(0, 0.5); mesh.add(l); return l;
+}
+function orbitRing(r) {
+  const pts = []; for (let a = 0; a <= 360; a += 2) pts.push(new THREE.Vector3(r * Math.cos(a * D2R), 0, -r * Math.sin(a * D2R)));
+  moons.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: 0x888888, transparent: true, opacity: 0.18 })));
+}
+async function stitch(layer, z, cols, rows) {
+  const c = document.createElement('canvas'); c.width = cols * S; c.height = rows * S;
+  const g = c.getContext('2d', { willReadFrequently: true });
+  await Promise.all([...Array(cols * rows).keys()].map(async (i) => {
+    const x = i % cols, y = Math.floor(i / cols), img = await requestImage(tileURL(layer, z, x, y));
+    if (img) g.drawImage(img, x * S, y * S);
+  }));
+  return c;
+}
+async function buildPhobos() {
+  const [demC, texC] = await Promise.all([stitch(PHOBOS_DEM, 0, 2, 1), stitch(PHOBOS_IMG, 1, 4, 2)]);
+  const d = demC.getContext('2d').getImageData(0, 0, demC.width, demC.height).data;
+  const geo = new THREE.SphereGeometry(1, 160, 80), p = geo.attributes.position, uv = geo.attributes.uv;
+  const k = MOON_SCALE / R_KM, v = new THREE.Vector3();
+  for (let i = 0; i < p.count; i++) {
+    const px = Math.min(Math.floor(uv.getX(i) * 512), 511), py = Math.min(Math.floor((1 - uv.getY(i)) * 256), 255);
+    const rKm = 8 + d[(py * 512 + px) * 4] / 255 * 6;  // HRSC shape model, approx. 8–14 km radius
+    v.fromBufferAttribute(p, i).normalize().multiplyScalar(rKm * k);
+    p.setXYZ(i, v.x, v.y, v.z);
+  }
+  geo.computeVertexNormals();
+  const tex = new THREE.CanvasTexture(texC); tex.colorSpace = THREE.SRGBColorSpace;
+  const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: tex, roughness: 1 }));
+  moonLabel('Phobos', mesh);
+  moons.add(mesh);
+  // orbital period 7.65 h; in Mars-fixed frame it rises in the west
+  moonList.push({ mesh, r: 9376 / R_KM, w: 2 * Math.PI * (1 / 27553.8 - 1 / 88642.66), phase: 0.6 });
+}
+function buildDeimos() {
+  const geo = new THREE.SphereGeometry(1, 96, 48), p = geo.attributes.position, v = new THREE.Vector3();
+  for (let i = 0; i < p.count; i++) {
+    v.fromBufferAttribute(p, i);
+    const n = 1 + 0.07 * Math.sin(3.1 * v.x + 1.3) * Math.sin(2.7 * v.y + 0.4) * Math.sin(3.7 * v.z + 2)
+                + 0.03 * Math.sin(9 * v.x + 2) * Math.sin(8 * v.y) * Math.sin(7 * v.z + 1);
+    p.setXYZ(i, v.x * n * 7.5, v.y * n * 5.2, v.z * n * 6.1);
+  }
+  geo.scale(MOON_SCALE / R_KM, MOON_SCALE / R_KM, MOON_SCALE / R_KM);
+  geo.computeVertexNormals();
+  const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0x8e8073, roughness: 1 }));
+  moonLabel('Deimos (shape generic)', mesh);
+  moons.add(mesh);
+  moonList.push({ mesh, r: 23463 / R_KM, w: 2 * Math.PI * (1 / 109074.8 - 1 / 88642.66), phase: 2.4 });
+}
+orbitRing(9376 / R_KM); orbitRing(23463 / R_KM);
+buildPhobos(); buildDeimos();
+const occluder = new THREE.Ray();
+function updateMoons(simMs) {
+  moonList.forEach((m) => {
+    const a = m.phase + m.w * (simMs / 1000);
+    m.mesh.position.set(m.r * Math.cos(a), 0, -m.r * Math.sin(a));
+    m.mesh.rotation.y = a + Math.PI; // tidally locked: long axis (+x) faces Mars
+    // hide the label when Mars is between the camera and the moon
+    occluder.origin.copy(camera.position);
+    occluder.direction.subVectors(m.mesh.position, camera.position).normalize();
+    const hit = occluder.intersectSphere(pickSphere, hitP);
+    m.mesh.children[0].visible = moons.visible && !(hit && hit.distanceTo(camera.position) < m.mesh.position.distanceTo(camera.position));
+  });
+}
+
+/* =====================================================================
+   Sun & time
+   ===================================================================== */
+const simMs = () => Date.now() + state.offsetH * MARS_HOUR_MS;
+const right = new THREE.Vector3();
+function updateSun() {
+  const m = state.m24 = mars24(simMs());
+  if (state.sunMode === 'real') toVec(m.subLat, m.subLon, 1, sunDir);
+  else {
+    const cd = camera.position.clone().normalize();
+    right.crossVectors(camera.up, cd).normalize();
+    sunDir.copy(cd).addScaledVector(right, -0.55).addScaledVector(camera.up, 0.35).normalize();
+  }
+  sunLight.position.copy(sunDir).multiplyScalar(50);
+  sunSprite.position.copy(sunDir).multiplyScalar(150);
+  sunSprite.visible = state.sunMode === 'real';
+  ambient.intensity = state.sunMode === 'real' ? 0.03 : 0.18;
+}
+function updateTimeText() {
+  const m = state.m24, d = new Date(simMs());
+  document.getElementById('time-val').innerHTML =
+    `Mars time (MTC) <b>${fmtH(m.mtc)}</b> · Ls ${m.Ls.toFixed(0)}° (${SEASONS[Math.floor(m.Ls / 90)]})<br>` +
+    `Earth: ${d.toISOString().slice(0, 16).replace('T', ' ')} UTC` +
+    (state.offsetH ? ` (${state.offsetH > 0 ? '+' : ''}${state.offsetH.toFixed(1)} Mars h)` : ' (now)');
+}
+
+/* =====================================================================
+   Info panel & fly-to
+   ===================================================================== */
+const info = document.getElementById('info');
+function showInfo(p, kind) {
+  const h = sampleHeight(p.lat, p.lon);
+  document.getElementById('info-title').textContent = p.name;
+  document.getElementById('info-meta').innerHTML =
+    `${kind === 'site' ? `Landing site · ${p.year}` : 'Surface feature'} · ${fmtLL(p.lat, p.lon)}<br>` +
+    `${h != null ? `Elevation ≈ ${fmtM(heightToM(h))} · ` : ''}Local solar time ${fmtH(localSolarTime(state.m24, p.lon))}`;
+  document.getElementById('info-body').textContent = p.body;
+  info.style.display = 'block';
+  flyTo(p.lat, p.lon, kind === 'site' || p.tier === 3 ? 1.12 : 1.5);
+}
+document.getElementById('info-close').onclick = () => (info.style.display = 'none');
+
+let flight = null;
+function flyTo(lat, lon, dist) {
+  flight = { from: camera.position.clone(), to: toVec(lat, lon, dist), t: 0 };
+  setSpin(false);
+}
+const flyto = document.getElementById('flyto');
+[['Landing sites', SITES], ['Features', FEATURES]].forEach(([g, list]) => {
+  const og = document.createElement('optgroup'); og.label = g;
+  list.forEach((p) => { const o = document.createElement('option'); o.value = p.name; o.textContent = p.name; og.appendChild(o); });
+  flyto.appendChild(og);
+});
+flyto.onchange = () => {
+  const p = [...SITES, ...FEATURES].find((x) => x.name === flyto.value);
+  if (p) showInfo(p, SITES.includes(p) ? 'site' : 'feature');
+};
+// far enough that the whole planet fits, including on tall phone screens
+const homeDist = () => Math.max(3.4, 1 / Math.sin(0.85 * Math.atan(Math.tan(camera.fov * D2R / 2) * camera.aspect)));
+const homeView = () => toVec(clamp(state.m24.subLat + 12, -60, 60), state.m24.subLon - 35, homeDist());
+document.getElementById('reset').onclick = () => {
+  flight = { from: camera.position.clone(), to: homeView(), t: 0 };
+  info.style.display = 'none';
+};
+
+/* =====================================================================
+   Measure tool: great-circle distance + elevation profile
+   ===================================================================== */
+const measure = { a: null, b: null, line: null, dots: [] };
+const measurePanel = document.getElementById('measure');
+const measureMat = new THREE.LineBasicMaterial({ color: 0xffd23d, depthTest: true });
+const measureDotMat = new THREE.MeshBasicMaterial({ color: 0xffd23d });
+function clearMeasure() {
+  if (measure.line) { scene.remove(measure.line); measure.line.geometry.dispose(); }
+  measure.dots.forEach((d) => scene.remove(d));
+  Object.assign(measure, { a: null, b: null, line: null, dots: [] });
+}
+function measureClick(ll) {
+  if (measure.b) clearMeasure();
+  const dot = new THREE.Mesh(dotGeo, measureDotMat);
+  toVec(ll.lat, ll.lon, surfaceR(sampleHeight(ll.lat, ll.lon)) + 0.002, dot.position);
+  scene.add(dot); measure.dots.push(dot);
+  if (!measure.a) { measure.a = ll; document.getElementById('measure-text').textContent = 'Now click the end point.'; return; }
+  measure.b = ll;
+  drawMeasure();
+}
+function drawMeasure() {
+  const { a, b } = measure;
+  const va = toVec(a.lat, a.lon), vb = toVec(b.lat, b.lon), ang = va.angleTo(vb);
+  const N = 120, pts = [], prof = [];
+  for (let i = 0; i <= N; i++) {
+    const t = i / N, v = new THREE.Vector3();
+    if (ang < 1e-6) v.copy(va);
+    else v.copy(va).multiplyScalar(Math.sin((1 - t) * ang) / Math.sin(ang)).addScaledVector(vb, Math.sin(t * ang) / Math.sin(ang));
+    const ll = toLatLon(v), h = sampleHeight(ll.lat, ll.lon);
+    prof.push(h == null ? null : heightToM(h));
+    pts.push(v.normalize().multiplyScalar(surfaceR(h) + 0.003));
+  }
+  if (measure.line) { scene.remove(measure.line); measure.line.geometry.dispose(); }
+  measure.line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), measureMat);
+  scene.add(measure.line);
+  const km = ang * R_KM, vals = prof.filter((x) => x != null);
+  const lo = Math.min(...vals), hi = Math.max(...vals);
+  document.getElementById('measure-text').innerHTML =
+    `<b>${km < 10 ? km.toFixed(2) : Math.round(km).toLocaleString()} km</b> great-circle · ` +
+    `start ${fmtM(prof[0])} → end ${fmtM(prof[N])} · range ${fmtM(lo)} to ${fmtM(hi)}`;
+  const c = document.getElementById('profile'), g = c.getContext('2d'), W = c.width, H = c.height, pad = 8;
+  g.clearRect(0, 0, W, H);
+  g.strokeStyle = '#333'; g.strokeRect(0.5, 0.5, W - 1, H - 1);
+  const span = Math.max(hi - lo, 50);
+  const xy = (i, m) => [pad + (W - 2 * pad) * i / N, H - pad - (H - 2 * pad) * (m - lo) / span];
+  g.beginPath();
+  prof.forEach((m, i) => { const [x, y] = xy(i, m ?? lo); i ? g.lineTo(x, y) : g.moveTo(x, y); });
+  g.lineTo(W - pad, H - pad); g.lineTo(pad, H - pad); g.closePath();
+  g.fillStyle = 'rgba(255,106,61,0.25)'; g.fill();
+  g.beginPath();
+  prof.forEach((m, i) => { const [x, y] = xy(i, m ?? lo); i ? g.lineTo(x, y) : g.moveTo(x, y); });
+  g.strokeStyle = '#ff6a3d'; g.lineWidth = 2; g.stroke();
+  g.fillStyle = '#888'; g.font = '20px system-ui';
+  g.fillText(fmtM(hi), pad + 4, 24); g.fillText(fmtM(lo), pad + 4, H - 14);
+}
+const measureBtn = document.getElementById('measure-btn');
+function setMeasuring(on) {
+  state.measuring = on;
+  measureBtn.classList.toggle('on', on);
+  measurePanel.style.display = on ? 'block' : 'none';
+  if (on) { setSpin(false); document.getElementById('measure-text').textContent = 'Click the start point on the globe.'; }
+  else clearMeasure();
+}
+measureBtn.onclick = () => setMeasuring(!state.measuring);
+document.getElementById('measure-close').onclick = () => setMeasuring(false);
+
+/* =====================================================================
+   Pointer: hover readout + click
+   ===================================================================== */
+const ray = new THREE.Raycaster(), mouse = new THREE.Vector2(), pickSphere = new THREE.Sphere(new THREE.Vector3(), R), hitP = new THREE.Vector3();
+let hover = null, downXY = null;
+function pick(e) {
+  mouse.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+  ray.setFromCamera(mouse, camera);
+  return ray.ray.intersectSphere(pickSphere, hitP) ? toLatLon(hitP) : null;
+}
+renderer.domElement.addEventListener('pointermove', (e) => { hover = pick(e); updateReadout(); });
+renderer.domElement.addEventListener('pointerdown', (e) => { downXY = [e.clientX, e.clientY]; flight = null; });
+renderer.domElement.addEventListener('pointerup', (e) => {
+  if (!downXY || Math.hypot(e.clientX - downXY[0], e.clientY - downXY[1]) > 5) return;
+  const ll = pick(e);
+  if (ll && state.measuring) measureClick(ll);
+});
+function updateReadout() {
+  const main = document.getElementById('ro-main');
+  if (hover) {
+    const h = sampleHeight(hover.lat, hover.lon);
+    main.innerHTML = `${fmtLL(hover.lat, hover.lon)} · ${h != null ? `elev ≈ ${fmtM(heightToM(h))}` : ''}` +
+      `<br><span class="dim">local solar time ${fmtH(localSolarTime(state.m24, hover.lon))}</span>`;
+  } else main.textContent = 'Hover the globe for coordinates';
+}
+function updateStatus() {
+  const mpp = 180 / 2 ** deepest / S * D2R * R_KM * 1000;
+  const alt = (camera.position.length() - R) * R_KM;
+  const loading = active + queue.length;
+  document.getElementById('ro-sub').textContent =
+    `altitude ${Math.round(alt).toLocaleString()} km · imagery ≈ ${mpp >= 1000 ? (mpp / 1000).toFixed(1) + ' km' : Math.round(mpp) + ' m'}/px` +
+    (loading ? ` · loading ${loading}` : '');
+}
+
+/* =====================================================================
+   UI wiring
+   ===================================================================== */
+const $ = (id) => document.getElementById(id);
+const loadingEl = $('loading'), barEl = document.querySelector('#bar div');
+function setLayer() {
+  state.layer = LAYERS[$('layer').value];
+  $('layer-note').textContent = state.layer.note;
+  loadingEl.style.display = 'block';
+  buildRoots();
+}
+$('layer').onchange = setLayer;
+$('sharp').onchange = (e) => (state.sharp = e.target.value === '1');
+
+let normalTimer = null;
+function onExag() {
+  state.exag = +$('exag').value;
+  $('exag-val').textContent = state.exag === 0 ? 'Flat' : state.exag === 1 ? 'True scale (1×)' : `${state.exag}× exaggerated`;
+  live.forEach((n) => applyDisp(n.mesh.material));
+  controls.minDistance = R + (1 - DATUM_NORM) * dispScale() + 0.0015;
+  placeMarkers();
+  if (measure.b) drawMeasure();
+  clearTimeout(normalTimer);
+  normalTimer = setTimeout(() => demCache.forEach((e) => e.heights && computeNormals(e)), 120);
+}
+$('exag').oninput = onExag;
+
+let tilt = 0;
+$('tilt').oninput = (e) => {
+  tilt = +e.target.value * D2R;
+  $('tilt-val').textContent = tilt ? `Tilted ${e.target.value}° toward the horizon` : 'Looking straight down';
+};
+
+$('sunmode').onchange = (e) => { state.sunMode = e.target.value; $('time-block').style.display = state.sunMode === 'real' ? '' : 'none'; };
+$('time').oninput = (e) => { state.offsetH = +e.target.value; };
+$('play').onclick = () => { state.playing = !state.playing; $('play').textContent = state.playing ? '❚❚ Pause' : '▶ Play'; $('play').classList.toggle('on', state.playing); };
+$('now').onclick = () => { state.offsetH = 0; $('time').value = 0; };
+
+function setSpin(on) { controls.autoRotate = on; $('spin').checked = on; }
+$('spin').onchange = (e) => (controls.autoRotate = e.target.checked);
+$('show-grid').onchange = (e) => (grid.visible = e.target.checked);
+$('show-atmo').onchange = (e) => (limb.visible = haze.visible = e.target.checked);
+$('show-sites').onchange = (e) => (show.site = e.target.checked);
+$('show-features').onchange = (e) => (show.feature = e.target.checked);
+$('show-moons').onchange = (e) => { moons.visible = e.target.checked; moonList.forEach((m) => m.mesh.children.forEach((c) => (c.visible = e.target.checked))); };
+$('controls-head').onclick = () => $('controls').classList.toggle('collapsed');
+if (innerWidth < 700) $('controls').classList.add('collapsed');
+
+/* =====================================================================
+   Main loop
+   ===================================================================== */
+function resize() {
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize);
+resize();
+
+// Shareable view via URL, e.g. ?lat=-4.6&lon=137.4&alt=300&layer=themis&spin=0&exag=5&sun=lit
+const params = new URLSearchParams(location.search);
+camera.position.copy(params.has('lat') && params.has('lon')
+  ? toVec(+params.get('lat'), +params.get('lon'), R + (+params.get('alt') || 1500) / R_KM)
+  : homeView());
+if (params.get('spin') === '0' || params.has('lat')) setSpin(false);
+if (LAYERS[params.get('layer')]) $('layer').value = params.get('layer');
+if (params.has('exag')) $('exag').value = params.get('exag');
+if (params.has('tilt')) { $('tilt').value = params.get('tilt'); $('tilt').oninput({ target: $('tilt') }); }
+if (params.get('atmo') === '0') { $('show-atmo').checked = false; limb.visible = haze.visible = false; }
+if (params.get('sun') === 'lit') { $('sunmode').value = 'lit'; $('sunmode').onchange({ target: $('sunmode') }); }
+onExag();
+setLayer();
+
+let frame = 0, last = performance.now();
+renderer.setAnimationLoop((now) => {
+  const dt = Math.min((now - last) / 1000, 0.1); last = now;
+  if (state.playing) {
+    state.offsetH += dt;           // 1 Mars hour per second
+    if (state.offsetH > 24) state.offsetH -= 48;
+    $('time').value = state.offsetH;
+  }
+  updateSun();
+  updateMoons(simMs());
+
+  if (flight) {
+    flight.t = Math.min(1, flight.t + dt * 0.7);
+    const k = flight.t < 0.5 ? 2 * flight.t * flight.t : 1 - (-2 * flight.t + 2) ** 2 / 2;
+    const len = THREE.MathUtils.lerp(flight.from.length(), flight.to.length(), k);
+    camera.position.copy(flight.from.clone().normalize().lerp(flight.to.clone().normalize(), k).normalize().multiplyScalar(len));
+    if (flight.t >= 1) flight = null;
+  }
+  // slow down rotate/zoom near the surface
+  const alt = Math.max(camera.position.length() - R, 1e-4);
+  controls.rotateSpeed = clamp(alt * 0.45, 0.01, 1);
+  controls.zoomSpeed = Math.log((1 + 0.85 * alt) / (1 + alt)) / Math.log(0.95);
+  controls.update();
+  if (tilt) camera.rotateX(tilt); // pitch up toward the horizon (north-facing)
+  camera.updateMatrixWorld();
+
+  if (frame % 2 === 0) updateLOD();
+  if (frame % 30 === 0) {
+    placeMarkers(); updateStatus(); updateTimeText(); evictDem();
+    const ready = roots.filter((r) => r.ready).length;
+    barEl.style.width = `${(ready / 32) * 100}%`;
+    if (holes === 0 && frame > 0) loadingEl.style.display = 'none';
+  }
+  updateMarkers();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+  frame++;
+});
+</script>
+</body>
+</html>
