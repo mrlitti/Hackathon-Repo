@@ -1,0 +1,16 @@
+{
+  "_schema": {
+    "id": "unique string, e.g. 'MSL_sol1234_TargetName'",
+    "name": "APXS target name from PDS",
+    "rover": "Curiosity | Spirit | Opportunity",
+    "sol": "integer sol of measurement",
+    "lat": "planetocentric latitude (deg)",
+    "lon": "east longitude (deg)",
+    "type": "rock | soil | vein | ... (from PDS target type)",
+    "chemistry": "{ 'SiO2': wt%, 'FeO': wt%, ... } - APXS oxide weight percents",
+    "photo_url": "link to the rover image of the target (PDS / raw images)",
+    "notes": "what the rock tells us (science context)",
+    "source": "PDS product ID / citation"
+  },
+  "rocks": []
+}

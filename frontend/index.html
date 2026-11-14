@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Rock Match</title>
+  <link rel="stylesheet" href="style.css">
+  <script type="importmap">
+    { "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    } }
+  </script>
+</head>
+<body>
+  <header>
+    <h1>ROCK MATCH</h1>
+    <span class="sub">APXS field guide · CSA chemistry × NASA rovers</span>
+    <span id="status" class="status">connecting…</span>
+  </header>
+
+  <main>
+    <!-- 3D MODEL VIEWER -->
+    <section id="viewer-panel" class="panel big">
+      <div class="panel-head">
+        <h2>3D Model</h2>
+        <label class="btn">Load model
+          <input type="file" id="model-input" accept=".glb,.gltf,.obj,.stl" hidden>
+        </label>
+        <select id="model-list"><option value="">Saved models…</option></select>
+      </div>
+      <div id="viewer"><p class="hint" id="viewer-hint">Drop a .glb / .gltf / .obj / .stl here</p></div>
+    </section>
+
+    <!-- MAP -->
+    <section class="panel">
+      <div class="panel-head"><h2>Map</h2></div>
+      <div id="map" class="placeholder">Map of APXS measurement sites — TODO</div>
+      <div class="row">
+        <input id="lat" type="number" step="any" placeholder="lat">
+        <input id="lon" type="number" step="any" placeholder="lon">
+      </div>
+    </section>
+
+    <!-- INPUT -->
+    <section class="panel">
+      <div class="panel-head"><h2>Identify Rock</h2></div>
+      <label class="btn">Photograph / upload rock
+        <input type="file" id="photo-input" accept="image/*" capture="environment" hidden>
+      </label>
+      <img id="photo-preview" alt="">
+      <p class="hint">Or enter chemistry (wt %):</p>
+      <div id="chem-inputs" class="chem-grid"></div>
+      <button id="match-btn" class="btn primary">Find match</button>
+    </section>
+
+    <!-- RESULTS -->
+    <section class="panel">
+      <div class="panel-head"><h2>Best Match</h2></div>
+      <div id="verdict" class="verdict">—</div>
+      <div id="results"><p class="hint">No search yet.</p></div>
+    </section>
+
+    <!-- ROCK DETAIL -->
+    <section class="panel">
+      <div class="panel-head"><h2>Rock Detail</h2></div>
+      <div id="detail"><p class="hint">Select a match to see rover photo, chemistry and science notes.</p></div>
+    </section>
+  </main>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
