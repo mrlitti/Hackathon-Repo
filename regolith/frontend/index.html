@@ -7,12 +7,6 @@
   <meta name="description" content="APXS field guide for Mars astronauts: match a rock against every APXS measurement by Curiosity, Spirit and Opportunity.">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='13' fill='%23c1440e'/%3E%3Ccircle cx='11' cy='12' r='3' fill='%23e86a3a'/%3E%3Ccircle cx='20' cy='20' r='4' fill='%23a3360a'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="style.css">
-  <script type="importmap">
-    { "imports": {
-      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
-    } }
-  </script>
 </head>
 <body>
   <header class="top">
@@ -29,7 +23,6 @@
       <nav class="tabs" role="tablist" aria-label="Views">
         <button role="tab" id="tabbtn-map" aria-controls="tab-map" aria-selected="true" data-tab="map">Map</button>
         <button role="tab" id="tabbtn-deposits" aria-controls="tab-deposits" aria-selected="false" data-tab="deposits">Deposits</button>
-        <button role="tab" id="tabbtn-model" aria-controls="tab-model" aria-selected="false" data-tab="model">3D model</button>
       </nav>
       <div class="panel-wrap">
         <div class="tabpanel" id="tab-map" role="tabpanel" aria-labelledby="tabbtn-map">
@@ -65,18 +58,6 @@
           </div>
         </div>
 
-        <div class="tabpanel" id="tab-model" role="tabpanel" aria-labelledby="tabbtn-model" hidden>
-          <div class="model">
-            <div class="model-bar">
-              <label class="btn">Load 3D model…
-                <input type="file" id="model-input" accept=".glb,.gltf,.obj,.stl" hidden>
-              </label>
-              <select id="model-list" aria-label="Saved models"><option value="">Saved models…</option></select>
-              <span class="note" style="margin:0">.glb, .gltf, .obj or .stl · drag and drop works too</span>
-            </div>
-            <div id="viewer"><div id="viewer-hint">Drop a 3D scan of a rock or sample here</div></div>
-          </div>
-        </div>
       </div>
     </section>
 

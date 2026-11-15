@@ -45,7 +45,7 @@ are fetched once on demand and cached. `fetch_data.py --only grs` downloads just
 
 ```bash
 pip install -r backend/requirements-dev.txt
-cd backend && python -m pytest -q          # 53 tests: classification, matching, element maps, API, tile proxy, uploads
+cd backend && python -m pytest -q          # 52 tests: classification, matching, element maps, API, tile proxy, uploads
 ```
 
 ## What's in the repo
@@ -63,7 +63,7 @@ backend/
   data/grs_maps.json        Mars Odyssey GRS element maps (Cl, Fe, Si, K, Th, H2O; 5° cells)
   data/raw/                 downloaded source files (git-ignored)
   tests/                    pytest suite
-frontend/                   Regolith web app (map, deposits explorer, 3D model viewer, charts)
+frontend/                   Regolith web app (map, deposits explorer, charts)
 mars-globe/                 3D Mars globe; embedded in Regolith and also works standalone
 ```
 

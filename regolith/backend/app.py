@@ -18,7 +18,6 @@ API
   GET  /api/earth-refs/{id}/spectrum   their spectra
   POST /api/classify                   deposit class for a composition
   POST /api/match                      nearest matches + sampling verdict for a composition
-  POST /api/models, GET /api/models    upload / list 3D models
   POST /api/photos                     upload a rock photo
 
 Pages: /  (Regolith)   /globe/  (3D Mars globe, also works standalone)
@@ -61,7 +60,6 @@ UPLOADS = BASE / "uploads"
 FRONTEND = BASE.parent / "frontend"
 GLOBE = BASE.parent / "mars-globe"
 
-MODEL_EXTS = {".glb", ".gltf", ".obj", ".stl"}
 PHOTO_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
 MAX_UPLOAD_BYTES = 100 * 1024 * 1024
 SUMMARY_FIELDS = ("id", "name", "rover", "sol", "lat", "lon", "deposit", "sample_type", "deposit_site")
@@ -393,18 +391,6 @@ def save_upload(file: UploadFile, allowed: set[str], subdir: str) -> dict:
     name = f"{uuid.uuid4().hex[:8]}{ext}"
     (folder / name).write_bytes(data)
     return {"name": name, "original": file.filename, "url": f"/uploads/{subdir}/{name}"}
-
-
-@app.post("/api/models")
-def upload_model(file: UploadFile = File(...)):
-    return save_upload(file, MODEL_EXTS, "models")
-
-
-@app.get("/api/models")
-def list_models():
-    folder = UPLOADS / "models"
-    files = sorted(folder.iterdir()) if folder.exists() else []
-    return {"models": [{"name": f.name, "url": f"/uploads/models/{f.name}"} for f in files if f.suffix in MODEL_EXTS]}
 
 
 @app.post("/api/photos")

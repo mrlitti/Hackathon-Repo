@@ -174,15 +174,6 @@ table.dep-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .dep-table tr:hover td { background: #0d0d0d; }
 .dep-table .names { color: var(--muted); font-size: 12px; }
 
-/* ---------------------------------------------------------------- 3D model tab */
-.model { display: flex; flex-direction: column; height: 100%; }
-.model-bar { display: flex; gap: 8px; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
-.model-bar select { max-width: 260px; }
-#viewer { position: relative; flex: 1; min-height: 300px; background: radial-gradient(ellipse at center, #141414 0%, #000 70%); }
-#viewer.drag { outline: 2px dashed var(--accent); outline-offset: -8px; }
-#viewer canvas { display: block; }
-#viewer-hint { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); pointer-events: none; text-align: center; }
-
 /* ---------------------------------------------------------------- responsive */
 @media (max-width: 1000px) {
   .layout { grid-template-columns: minmax(0, 1fr); height: auto; }

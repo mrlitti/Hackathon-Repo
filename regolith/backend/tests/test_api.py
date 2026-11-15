@@ -198,15 +198,6 @@ def test_pages(client):
     assert client.get("/globe/").status_code == 200
 
 
-def test_model_upload(client):
-    ok = client.post("/api/models", files={"file": ("rock.stl", b"solid t\nendsolid t\n", "model/stl")})
-    assert ok.status_code == 200 and ok.json()["url"].startswith("/uploads/models/")
-    path = DATA.parent / ok.json()["url"].lstrip("/")
-    path.unlink(missing_ok=True)
-    bad = client.post("/api/models", files={"file": ("rock.exe", b"x", "application/octet-stream")})
-    assert bad.status_code == 400
-
-
 # ------------------------------------------------------------------ CTX tile proxy
 
 def test_ctx_tile_proxy_caches_and_degrades(client, monkeypatch, tmp_path):

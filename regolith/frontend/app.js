@@ -1,8 +1,3 @@
-import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
-import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { ORDER, TRACE, fmtValue, hideTip, spectrumChart, spiderChart, unit } from './charts.js';
 
 const $ = (id) => document.getElementById(id);
@@ -113,7 +108,6 @@ function selectTab(name) {
     $(`tab-${t.dataset.tab}`).hidden = !on;
   }
   if (name === 'deposits') openDeposits();
-  if (name === 'model') initViewer();
 }
 tabs.forEach((t, i) => {
   t.addEventListener('click', () => selectTab(t.dataset.tab));
@@ -611,94 +605,6 @@ function showClassOnMap(cid, viewId) {
   toGlobe({ type: 'rm:highlight', ids, fit: true, select: null });
   selectTab('map');
 }
-
-/* ====================================================================== 3D model viewer (lazy) */
-let viewer = null;
-function initViewer() {
-  if (viewer) return;
-  const box = $('viewer');
-  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-  renderer.outputColorSpace = THREE.SRGBColorSpace;
-  box.append(renderer.domElement);
-  const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 10000);
-  camera.position.set(3, 2, 3);
-  const controls = new OrbitControls(camera, renderer.domElement);
-  controls.enableDamping = true;
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x2a1a10, 1.4));
-  const sun = new THREE.DirectionalLight(0xffeedd, 2.2);
-  sun.position.set(5, 10, 6);
-  scene.add(sun);
-  scene.add(new THREE.GridHelper(10, 20, 0x333333, 0x161616));
-  viewer = { renderer, scene, camera, controls, current: null };
-  const resize = () => {
-    const w = box.clientWidth, hgt = box.clientHeight;
-    if (!w || !hgt) return;
-    renderer.setSize(w, hgt);
-    camera.aspect = w / hgt;
-    camera.updateProjectionMatrix();
-  };
-  new ResizeObserver(resize).observe(box);
-  resize();
-  renderer.setAnimationLoop(() => {
-    if ($('tab-model').hidden) return;
-    controls.update();
-    renderer.render(scene, camera);
-  });
-  refreshModelList();
-}
-function showObject(obj) {
-  const v = viewer;
-  if (v.current) v.scene.remove(v.current);
-  v.current = obj;
-  const box = new THREE.Box3().setFromObject(obj);
-  const size = box.getSize(new THREE.Vector3()).length() || 1;
-  obj.position.sub(box.getCenter(new THREE.Vector3()));
-  v.scene.add(obj);
-  v.camera.position.set(size, size * 0.7, size);
-  v.camera.near = size / 1000;
-  v.camera.far = size * 100;
-  v.camera.updateProjectionMatrix();
-  v.controls.target.set(0, 0, 0);
-  $('viewer-hint').hidden = true;
-}
-function loadModel(url, ext) {
-  initViewer();
-  const onErr = (e) => { $('viewer-hint').hidden = false; $('viewer-hint').textContent = `Could not load model: ${e.message || e}`; };
-  ext = ext.toLowerCase();
-  if (ext === 'glb' || ext === 'gltf') new GLTFLoader().load(url, (g) => showObject(g.scene), undefined, onErr);
-  else if (ext === 'obj') new OBJLoader().load(url, showObject, undefined, onErr);
-  else if (ext === 'stl') new STLLoader().load(url, (geo) => showObject(new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0xb5651d, roughness: 0.9 }))), undefined, onErr);
-}
-async function uploadModel(file) {
-  const fd = new FormData();
-  fd.append('file', file);
-  try {
-    const saved = await api('/models', { method: 'POST', body: fd });
-    loadModel(saved.url, saved.name.split('.').pop());
-    refreshModelList();
-  } catch (e) {
-    $('viewer-hint').hidden = false;
-    $('viewer-hint').textContent = `Upload failed: ${e.message}`;
-  }
-}
-async function refreshModelList() {
-  try {
-    const { models } = await api('/models');
-    $('model-list').replaceChildren(h('option', { value: '' }, 'Saved models…'), ...models.map((m) => h('option', { value: m.url }, m.name)));
-  } catch { /* backend offline: keep the list empty */ }
-}
-$('model-input').addEventListener('change', (e) => e.target.files[0] && uploadModel(e.target.files[0]));
-$('model-list').addEventListener('change', (e) => e.target.value && loadModel(e.target.value, e.target.value.split('.').pop()));
-const vbox = $('viewer');
-vbox.addEventListener('dragover', (e) => { e.preventDefault(); vbox.classList.add('drag'); });
-vbox.addEventListener('dragleave', () => vbox.classList.remove('drag'));
-vbox.addEventListener('drop', (e) => {
-  e.preventDefault();
-  vbox.classList.remove('drag');
-  if (e.dataTransfer.files[0]) uploadModel(e.dataTransfer.files[0]);
-});
 
 onChemInput();
 boot();
