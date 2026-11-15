@@ -347,7 +347,7 @@ def match(req: MatchRequest):
 
 
 # --------------------------------------------------------------------------- tile proxy (CTX)
-# The Murray Lab CTX mosaic is served by Esri. Fetching it server-side avoids intermittent browser
+# NASA Mars Trek's CTX global mosaic layer; Trek's WMTS capabilities point its tiles at this Esri-hosted URL. Fetching it server-side avoids intermittent browser
 # CORS failures and caches tiles on disk, so repeat demos work even on weak conference Wi-Fi.
 CTX_UPSTREAM = "https://astro.arcgis.com/arcgis/rest/services/OnMars/CTX/MapServer/tile/{z}/{y}/{x}"
 CTX_MAX_LEVEL = 12

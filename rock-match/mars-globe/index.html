@@ -120,7 +120,6 @@
       <option value="viking">Viking color mosaic · optical</option>
       <option value="themis">THEMIS day infrared · thermal</option>
       <option value="mola">MOLA color elevation · topographic</option>
-      <option value="hillshade">MOLA + HRSC relief · shaded</option>
     </select>
     <div class="note" id="layer-note"></div>
 
@@ -218,9 +217,9 @@
 </div>
 
 <div id="credit" class="panel">
-  Data: NASA/JPL-Caltech Mars Trek — Viking MDIM 2.1 (USGS), MGS MOLA, Mars Express HRSC (ESA/DLR/FU Berlin),
-  Mars Odyssey THEMIS (ASU), HiRISE (NASA/JPL/UArizona). CTX mosaic: NASA/JPL/MSSS/The Murray Lab (via Esri).
-  APXS: NASA PDS &amp; Canadian Space Agency. Phobos: Viking + HRSC. Sun: Mars24 algorithm (Allison &amp; McEwen 2000).
+  Data: NASA/JPL-Caltech Mars Trek — Viking MDIM 2.1 (USGS), MGS MOLA,
+  Mars Odyssey THEMIS (ASU), HiRISE (NASA/JPL/UArizona). CTX: NASA Mars Trek layer "MRO CTX Mosaic Global" (NASA/JPL/MSSS; mosaic by Caltech).
+  APXS: NASA PDS &amp; Canadian Space Agency. Phobos: Viking imagery on an ellipsoid of NASA's published size. Sun: Mars24 algorithm (Allison &amp; McEwen 2000).
   Moons shown 15× real size; distances to scale; moon positions illustrative.
 </div>
 
@@ -246,8 +245,6 @@ const LAYERS = {
                note: 'Mars Odyssey THEMIS daytime infrared, 100 m. Bright = warm (rock), dark = cool (dust). Covers ~60°S–60°N.' },
   mola:      { body: 'Mars', id: 'Mars_MGS_MOLA_ClrShade_merge_global_463m', ext: 'jpg', max: 7,
                note: 'MOLA laser altimeter elevation. Blue = low, white = high.' },
-  hillshade: { body: 'Mars', id: 'Mars_MOLA_blend200ppx_HRSC_Shade_clon0dd_200mpp_lzw', ext: 'jpg', max: 8,
-               note: 'MOLA + Mars Express HRSC blended relief, 200 m.' },
 };
 // 8-bit MOLA DEM: grey 0..255 ↔ −8201 m .. +21241 m (checked against Gale, Meridiani, Olympus Mons).
 const DEM = { body: 'Mars', id: 'Mars_MGS_MOLA_DEM_mosaic_global_463m_8', ext: 'png', max: 5 };
@@ -255,10 +252,11 @@ const DEM_MIN_M = -8201, DEM_RANGE_M = 29442;
 const DATUM_NORM = -DEM_MIN_M / DEM_RANGE_M;          // grey level of 0 m
 const TRUE_RELIEF = DEM_RANGE_M / 1000 / R_KM;         // full DEM range in Mars radii
 
-// Murray Lab global CTX mosaic (Esri OnMars service): 512-px tiles on the same grid, level 12 = 5 m/px.
+// NASA Mars Trek's global CTX layer (CTX_beta01_uncontrolled_5m_Caltech). Trek's own WMTS capabilities point its
+// tiles at this Esri-hosted URL (levels 0-11, 512-px tiles); MRO CTX images, NASA/JPL/MSSS.
 // When served by the Rock Match backend (/globe/), tiles go through its caching proxy.
 const VIA_BACKEND = location.pathname.startsWith('/globe/');
-// Level 12 is capped: Esri's level-12 tiles contain duplicated patches with no-data bands in places.
+// Capped at 11, the deepest level Trek lists (level 12 there contains duplicated patches).
 const CTX = { max: 11, size: 512, url: (z, x, y) => (VIA_BACKEND ? `/api/tiles/ctx/${z}/${y}/${x}.png`
   : `https://astro.arcgis.com/arcgis/rest/services/OnMars/CTX/MapServer/tile/${z}/${y}/${x}`) };
 // HiRISE mosaics of the rover sites (NASA Mars Trek). bbox = [lonW, latS, lonE, latN]
@@ -271,7 +269,8 @@ const HIRISE_SITES = [
 const MIN_ALT = 0.5 / R_KM;   // closest approach: 500 m above the local terrain
 
 const PHOBOS_IMG = { body: 'Phobos', id: 'Phobos_Viking_Mosaic_40ppd_DLRcontrol', ext: 'jpg' };
-const PHOBOS_DEM = { body: 'Phobos', id: 'Phobos_ME_HRSC_DEM_Global_2ppd', ext: 'jpg' };
+// Phobos shape: NASA's published dimensions, 27 × 22 × 18 km (science.nasa.gov/mars/moons/phobos).
+const PHOBOS_AXES_KM = [13.5, 9, 11];   // x, y (spin axis), z semi-axes
 
 /* places: planetocentric lat, east lon. tier 0 = always, 1 = global, 2 = regional, 3 = local */
 const SITES = [
@@ -1003,16 +1002,9 @@ async function stitch(layer, z, cols, rows) {
   return c;
 }
 async function buildPhobos() {
-  const [demC, texC] = await Promise.all([stitch(PHOBOS_DEM, 0, 2, 1), stitch(PHOBOS_IMG, 1, 4, 2)]);
-  const d = demC.getContext('2d').getImageData(0, 0, demC.width, demC.height).data;
-  const geo = new THREE.SphereGeometry(1, 160, 80), p = geo.attributes.position, uv = geo.attributes.uv;
-  const k = MOON_SCALE / R_KM, v = new THREE.Vector3();
-  for (let i = 0; i < p.count; i++) {
-    const px = Math.min(Math.floor(uv.getX(i) * 512), 511), py = Math.min(Math.floor((1 - uv.getY(i)) * 256), 255);
-    const rKm = 8 + d[(py * 512 + px) * 4] / 255 * 6;  // HRSC shape model, approx. 8–14 km radius
-    v.fromBufferAttribute(p, i).normalize().multiplyScalar(rKm * k);
-    p.setXYZ(i, v.x, v.y, v.z);
-  }
+  const texC = await stitch(PHOBOS_IMG, 1, 4, 2);                 // NASA Viking Orbiter mosaic
+  const geo = new THREE.SphereGeometry(1, 96, 48), k = MOON_SCALE / R_KM;
+  geo.scale(PHOBOS_AXES_KM[0] * k, PHOBOS_AXES_KM[1] * k, PHOBOS_AXES_KM[2] * k);
   geo.computeVertexNormals();
   const tex = new THREE.CanvasTexture(texC); tex.colorSpace = THREE.SRGBColorSpace;
   const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: tex, roughness: 1 }));

@@ -77,10 +77,10 @@ mars-globe/                 3D Mars globe; embedded in Rock Match and also works
 | [Curiosity waypoints](https://mars.nasa.gov/mmgis-maps/MSL/Layers/json/MSL_waypoints.json) | NASA/JPL-Caltech MMGIS | Where each Curiosity measurement was taken | NASA public data |
 | [MER corrected traverses](https://an.rsl.wustl.edu/mera/AN/pages/mer/mer_traverse.htm) | PDS Analyst's Notebook (WUSTL), T. Parker | Where each Spirit and Opportunity measurement was taken | NASA PDS |
 | Raw images API, PDS Imaging Node | NASA/JPL-Caltech/MSSS, NASA/JPL/Cornell/USGS | MAHLI and Microscopic Imager close-ups | NASA public data |
-| Mars Trek tiles: Viking, MOLA, THEMIS, HRSC, HiRISE | NASA/JPL-Caltech, USGS, ESA/DLR/FU Berlin, ASU, UArizona | Globe imagery and elevation | NASA public data |
+| [NASA Mars Trek](https://trek.nasa.gov/mars/) tiles: Viking MDIM 2.1, MGS MOLA, Odyssey THEMIS, MRO HiRISE, Viking Phobos mosaic | NASA/JPL-Caltech, USGS, ASU, UArizona | Globe imagery and elevation | NASA public data |
 | [Mars Odyssey GRS element maps](https://pds-geosciences.wustl.edu/ody/ody-m-grs-5-elements-v1/) (`ODY-M-GRS-5-ELEMENTS-V1.0`, smoothed 5°×5°) | NASA PDS Geosciences Node; Boynton et al. (2007), JGR 112, E12S99 | Orbital element concentration maps: Cl, Fe, Si, K, Th, water-equivalent hydrogen | Public domain |
 | NASA/JPL news releases and mission pages | NASA/JPL-Caltech | "Why" links for each deposit type (for example the 2011 gypsum vein and 2022 salty-region releases) | NASA public data |
-| Global CTX mosaic (via Esri) | NASA/JPL/MSSS/The Murray Lab | Globe imagery (5 m/px mosaic, streamed at up to ~10 m/px) | Free use with credit |
+| NASA Mars Trek layer "MRO CTX Mosaic Global" (`CTX_beta01_uncontrolled_5m_Caltech`) | NASA/JPL/MSSS (MRO CTX images), mosaic by Caltech. Tiles come from the server Trek's own capabilities file points to | Globe imagery (streamed at up to ~10 m/px) | NASA public data, credit required |
 
 `backend/data/raw/MANIFEST.json` records every download (URL, licence, counts, date).
 
