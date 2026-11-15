@@ -31,6 +31,7 @@ Run:   cd backend && uvicorn app:app --reload
 from __future__ import annotations
 
 import json
+import random
 import struct
 import sys
 import uuid
@@ -55,6 +56,9 @@ from rockmatch.geo import distance_m, wrap_lon  # noqa: E402
 from rockmatch.predict import (SAM_GALE_WT, SAM_LINK, ground_from_grs, minerals, nearby,  # noqa: E402
                                validate_ground, water_yield)
 from rockmatch.sources import with_counts as sources_with_counts  # noqa: E402
+from rockmatch.planner import Terrain, class_values, plan as plan_route  # noqa: E402
+from rockmatch.spectrum_match import GRID as SPEC_GRID, SpectrumLibrary, peaks as spec_peaks, rebin, thin  # noqa: E402
+from rockmatch.spectra import parse_spectrum  # noqa: E402
 from rockmatch.match import Matcher, similarity_pct, verdict  # noqa: E402
 from rockmatch.net import http_get  # noqa: E402
 from rockmatch.photos import rover_photos  # noqa: E402
@@ -104,6 +108,11 @@ class Store:
         self.grs_meta = {k: grs_doc.get(k) for k in ("source", "url", "browse", "note")}
         self.prospects: dict = _load("prospects.json", {})
         self.validation: dict = _load("validation.json", {})
+        # EVA planner terrain (HiRISE Gale DEM, calibrated against Curiosity's waypoint elevations)
+        cal = _load("terrain/gale_dem.json", {})
+        self.terrain_cal = cal
+        self.terrain = Terrain(DATA / "terrain" / "gale_dem_z12", cal["scale_m_per_grey"], cal["offset_m"]) if cal else None
+        self._spec_lib = None
         # slider ranges for the reading form: what was actually measured (min, median, max) per element
         self.ranges = {}
         for el in ELEMENTS:
@@ -319,8 +328,10 @@ def forecast(lat: float, lon: float) -> dict:
     return {
         "lat": lat, "lon": lon, "cell": here, "zones": zones,
         "water": water_yield(h2o, store.gale_h2o) if h2o is not None else None,
-        "ground": {"predicted": ground_from_grs(vals), "grs": vals, "check": store.ground_check,
-                   "masked": [el for el, v in vals.items() if v is None]} if any(v is not None for v in vals.values()) else None,
+        # a soil prediction needs the major elements: near the poles NASA masks Fe, Si and Cl (water ice)
+        "ground": {"predicted": ground_from_grs(vals), "grs": vals, "check": store.ground_check}
+        if vals["Fe"] is not None and vals["Si"] is not None else None,
+        "masked": vals["Fe"] is None,
         "nearby": _with_skill(nearby(lat, lon, store.rocks, store.class_labels, store.class_prior)),
         "sources": {"grs": store.grs_meta.get("url"), "sam": SAM_LINK},
         "basis": {
@@ -340,6 +351,105 @@ def _with_skill(near: dict | None) -> dict | None:
         v = store.validation["nearby"]
         near["skill"] = {k: v[k] for k in ("n", "top1_pct", "top3_pct", "baseline_pct", "hold_m")}
     return near
+
+
+class PlanIn(BaseModel):
+    lat: float = Field(..., ge=-90, le=90)
+    lon: float = Field(..., ge=-360, le=360)
+    hours: float = Field(4, ge=1, le=8)
+    max_slope_deg: float = Field(15, ge=5, le=30)
+    stop_min: float = Field(20, ge=5, le=90)
+    speed_kmh: float = Field(2.5, ge=1, le=5)
+
+
+@app.post("/api/plan")
+def plan_eva(req: PlanIn):
+    """A walking route from a start point that visits the most valuable deposit sites and returns in time."""
+    if store.terrain is None:
+        raise HTTPException(503, "Terrain not built - run fetch_data.py --only gale_dem, then build_dataset.py")
+    counts: dict[str, int] = {}
+    for r in store.rocks:
+        counts[r["deposit"]] = counts.get(r["deposit"], 0) + 1
+    values = class_values(counts, {"basaltic", "basaltic_soil"})
+    try:
+        out = plan_route(store.terrain, (req.lat, wrap_lon(req.lon)), req.hours, req.max_slope_deg, req.stop_min,
+                         req.speed_kmh, store.deposits, values, store.class_labels)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    out["terrain"] = {k: store.terrain_cal.get(k) for k in ("product", "n_waypoints", "residual_sd_m", "curiosity_route")}
+    return out
+
+
+def spec_lib() -> SpectrumLibrary:
+    if store._spec_lib is None:
+        store._spec_lib = SpectrumLibrary(_load("spectra_lib.json", {}).get("items", []))
+    return store._spec_lib
+
+
+@app.get("/api/spectra")
+def spectra_list():
+    """Spectra available in the spectrum lab: every Curiosity measurement and the CSA lab standards."""
+    return {"spectra": [{k: it.get(k) for k in ("id", "kind", "name", "rover", "sol", "deposit", "description", "live_s")}
+                        for it in spec_lib().items], "energy_kev": SPEC_GRID}
+
+
+class SpectrumIn(BaseModel):
+    source_id: str | None = None
+    keep: float = Field(1.0, gt=0, le=1)          # share of the counting time (a quick-look reading)
+    exclude_self: bool = False
+    csv: str | None = Field(None, max_length=400_000)
+
+
+def parse_upload(text: str) -> list[int]:
+    """APXS rsp/CSA format (title line, first row = counting time) or two columns: energy (eV or keV), counts."""
+    rows = []
+    for line in text.splitlines():
+        parts = [p.strip().strip('"') for p in line.replace("\t", ",").replace(";", ",").split(",")]
+        try:
+            rows.append((float(parts[0]), float(parts[1])))
+        except (ValueError, IndexError):
+            continue
+    if len(rows) < 50:
+        raise HTTPException(422, "Could not read a spectrum: expected two columns, energy and counts, with at least 50 rows.")
+    if rows[0][0] < 600 and rows[0][1] > 20 * max(1, rows[1][1]):    # rsp convention: first row holds the counting time
+        rows = rows[1:]
+    kev = [e if max(r[0] for r in rows) < 100 else e / 1000 for e, _ in rows]
+    return rebin(kev, [c for _, c in rows])
+
+
+@app.post("/api/spectrum/match")
+def spectrum_match(req: SpectrumIn):
+    lib = spec_lib()
+    meta = None
+    if req.source_id:
+        it = next((i for i in lib.items if i["id"] == req.source_id), None)
+        if it is None:
+            raise HTTPException(404, f"No spectrum '{req.source_id}'")
+        counts = it["counts"]
+        if req.keep < 1:
+            counts = thin(counts, req.keep, random.Random(hash((req.source_id, req.keep)) & 0xFFFFFFFF))
+        meta = {k: it.get(k) for k in ("id", "kind", "name", "rover", "sol", "deposit", "description", "live_s")}
+    elif req.csv:
+        counts = parse_upload(req.csv)
+    else:
+        raise HTTPException(422, "Give a source_id or a csv spectrum")
+    if sum(counts) < 1000:
+        raise HTTPException(422, "Too few counts in the 1-15 keV range to match (under 1,000).")
+    exclude = {meta["id"]} if meta and req.exclude_self else None
+    rocks = lib.search(counts, top_k=8, exclude=exclude, kind="rock")
+    refs = lib.search(counts, top_k=12, exclude=exclude, kind="ref")
+    vote: dict[str, float] = {}
+    for m in rocks:
+        vote[m["deposit"]] = vote.get(m["deposit"], 0) + max(m["cosine"] - 0.95, 0)
+    tot = sum(vote.values()) or 1
+    votes = sorted(({"class": c, "label": store.class_labels.get(c, c), "pct": round(100 * v / tot)} for c, v in vote.items()),
+                   key=lambda x: -x["pct"])
+    other = next((m for m in rocks if not meta or m["id"] != meta["id"]), None)       # overlay: best match that is not itself
+    best = lib.counts_of(other["id"]) if other else None
+    return {"query": meta, "keep": req.keep, "total_counts": sum(counts), "energy_kev": SPEC_GRID, "counts": counts,
+            "best_counts": best, "best_name": other["name"] if other else None,
+            "peaks": spec_peaks(counts), "matches": rocks, "standards": refs, "votes": [v for v in votes if v["pct"] >= 1],
+            "skill": store.validation.get("spectra")}
 
 
 @app.get("/api/sources")

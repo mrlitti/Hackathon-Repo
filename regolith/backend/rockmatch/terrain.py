@@ -19,8 +19,8 @@ def _paeth(a: int, b: int, c: int) -> int:
     return a if pa <= pb and pa <= pc else b if pb <= pc else c
 
 
-def read_png_grey(path: Path) -> list[list[int]]:
-    """Decode an 8-bit greyscale (optionally +alpha) PNG into rows of grey values."""
+def read_png_grey(path: Path, keep_alpha: bool = False) -> list[list]:
+    """Decode an 8-bit greyscale (optionally +alpha) PNG into rows of grey values, or (grey, alpha) pairs."""
     data = path.read_bytes()
     if data[:8] != b"\x89PNG\r\n\x1a\n":
         raise ValueError(f"{path} is not a PNG")
@@ -43,7 +43,10 @@ def read_png_grey(path: Path) -> list[list[int]]:
             a = line[i - bpp] if i >= bpp else 0
             b, c = prev[i], prev[i - bpp] if i >= bpp else 0
             line[i] = (line[i] + (0, a, b, (a + b) >> 1, _paeth(a, b, c))[f]) & 0xFF
-        rows.append(list(line[::bpp]))
+        if keep_alpha:
+            rows.append([(line[i], line[i + 1] if bpp == 2 else 255) for i in range(0, stride, bpp)])
+        else:
+            rows.append(list(line[::bpp]))
         prev = line
     return rows
 

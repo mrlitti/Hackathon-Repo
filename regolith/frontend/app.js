@@ -1,4 +1,4 @@
-import { ORDER, TRACE, fmtValue, hideTip, spectrumChart, spiderChart, unit } from './charts.js';
+import { ORDER, TRACE, fmtValue, hideTip, labChart, profileChart, spectrumChart, spiderChart, unit } from './charts.js';
 
 const $ = (id) => document.getElementById(id);
 const API = '/api';
@@ -89,7 +89,7 @@ globe.addEventListener('load', () => {
 async function buildElementTools() {
   try {
     const { elements } = await api('/elements');
-    const opt = (e) => h('option', { value: e.key }, `${e.label} (${e.key}) — ${e.grs && e.apxs_count ? 'orbit + rocks' : e.grs ? 'orbit only' : 'rocks only'}`);
+    const opt = (e) => h('option', { value: e.key }, `${e.label} (${e.key})`);
     $('m-elem').replaceChildren(h('option', { value: '' }, 'Off'),
       h('optgroup', { label: 'Orbit (Mars Odyssey GRS) + rocks' }, ...elements.filter((e) => e.grs).map(opt)),
       h('optgroup', { label: 'Rocks (APXS) only' }, ...elements.filter((e) => !e.grs).map(opt)));
@@ -114,7 +114,7 @@ $('m-pct').addEventListener('input', syncElementTools);
 $('m-pct').addEventListener('change', sendElement);
 
 /* ====================================================================== tabs */
-const tabs = [...document.querySelectorAll('[role="tab"]')];
+const tabs = [...document.querySelectorAll('.tabs [role="tab"]')];
 function selectTab(name) {
   for (const t of tabs) {
     const on = t.dataset.tab === name;
@@ -125,6 +125,7 @@ function selectTab(name) {
   toGlobe({ type: 'rm:visible', on: name === 'map' });         // the globe stops rendering while hidden
   if (name === 'deposits') openDeposits();
   if (name === 'data') openData();
+  if (name === 'spectrum') openLab();
 }
 tabs.forEach((t, i) => {
   t.addEventListener('click', () => selectTab(t.dataset.tab));
@@ -244,13 +245,16 @@ const liveClassify = debounce(async () => {
   const chem = readChem();
   const box = $('live-class');
   if (Object.keys(chem).length < 3) {
-    box.replaceChildren(h('span', { class: 'note', style: { margin: 0 } }, 'Enter at least 3 elements to classify.'));
+    box.replaceChildren(h('span', { class: 'note', style: { margin: 0 } }, 'Set at least 3 elements.'));
     return;
   }
+  // APXS oxide totals are normalised to about 100 wt% (ppm traces are tiny), so a much larger sum is a typo
+  const total = Object.entries(chem).reduce((a, [el, v]) => a + (TRACE.has(el) ? v / 1e4 : v), 0);
+  const warn = total > 105 ? h('span', { class: 'sum-warn' }, `Oxides add up to ${Math.round(total)} wt%: APXS readings total about 100 wt%, so check the values.`) : '';
   try {
     const c = await postJson('/classify', { chemistry: chem });
     box.replaceChildren(h('span', {}, 'Looks like'), h('span', { class: 'chip' }, dot(classColor(c.class)), c.class_info.label),
-      h('span', { class: 'reason' }, c.reason));
+      h('span', { class: 'reason' }, c.reason), warn);
   } catch (e) {
     box.replaceChildren(h('span', { class: 'note', style: { margin: 0 } }, e.message));
   }
@@ -276,6 +280,7 @@ function setPosition(lat, lon, tellGlobe = true) {
   $('lat').value = lat.toFixed(4);                             // 0.0001 deg = 6 m on Mars, finer than any rover fix
   $('lon').value = (((lon + 180) % 360 + 360) % 360 - 180).toFixed(4);
   if (tellGlobe) toGlobe({ type: 'rm:set-position', lat, lon });
+  evaStartNote();
 }
 ['lat', 'lon'].forEach((id) => $(id).addEventListener('change', () => { const p = getPos(); if (p) toGlobe({ type: 'rm:set-position', ...p }); }));
 function setPicking(on) {
@@ -321,8 +326,7 @@ $('sim-btn').addEventListener('click', async () => {
     toGlobe({ type: 'rm:fly', lat, lon, alt_km: 5 });
     S.simulated = rock;
     $('sim-note').replaceChildren(h('div', { class: 'sim-note' },
-      'Simulated from a real measurement — ', h('b', {}, rock.name), ` (${rock.rover}, sol ${rock.sol}) — with its instrument error bars added, `,
-      `and you are standing ${Math.round(d)} m away. Regolith should recognise it.`));
+      'Simulated from ', h('b', {}, rock.name), ` (${rock.rover}, sol ${rock.sol}) with instrument noise. You are ${Math.round(d)} m away.`));
   } catch (e) {
     $('sim-note').replaceChildren(h('div', { class: 'sim-note' }, `Could not simulate: ${e.message}`));
   }
@@ -333,7 +337,7 @@ $('clear-btn').addEventListener('click', () => {
   S.simulated = null;
   $('sim-note').replaceChildren();
   $('card-result').hidden = true;
-  $('card-guide').hidden = false;
+  clearRoute();
   S.result = null;
   S.query = null;
   toGlobe({ type: 'rm:clear' });
@@ -348,7 +352,7 @@ $('photo-input').addEventListener('change', async (e) => {
   try {
     const res = await api('/photos', { method: 'POST', body: fd });
     $('photo-note').replaceChildren(h('a', { href: res.url, target: '_blank', rel: 'noopener' }, 'Field photo saved'),
-      ' — identification uses the APXS chemistry above.');
+      '. Identification uses the APXS chemistry.');
   } catch (err) {
     $('photo-note').textContent = `Photo upload failed: ${err.message}`;
   }
@@ -389,6 +393,10 @@ const ICON = {
   copy: '<rect x="8" y="8" width="13" height="13" rx="2"/><path d="M4 16V5a1 1 0 0 1 1-1h11"/>',
   pin: '<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>',
   ext: '<path d="M7 7h10v10"/><path d="M7 17 17 7"/>',
+  info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 7.5h.01"/>',
+  chev: '<path d="m9 6 6 6-6 6"/>',
+  flask: '<path d="M9 3h6"/><path d="M10 3v6L4.5 19a1.5 1.5 0 0 0 1.3 2h12.4a1.5 1.5 0 0 0 1.3-2L14 9V3"/>',
+  route: '<circle cx="6" cy="19" r="2"/><circle cx="18" cy="5" r="2"/><path d="M8 19h7.5a3.5 3.5 0 0 0 0-7h-7a3.5 3.5 0 0 1 0-7H16"/>',
 };
 function icon(name, cls = 'ic') {
   const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -413,26 +421,24 @@ function renderResult(res) {
   const q = res.query;
   const fact = (label, ...value) => h('div', { class: 'fact' }, h('span', {}, label), h('span', {}, ...value));
   const facts = [
-    fact('Deposit type', h('span', { class: 'chip' }, dot(classColor(q.class)), q.class_info.label), ' ', h('span', { class: 'reason' }, q.reason)),
-    fact('How rare', `${res.stats.class_count.toLocaleString()} of ${res.stats.total.toLocaleString()} measurements share this type`),
+    fact('Deposit type', h('span', { class: 'chip' }, dot(classColor(q.class)), q.class_info.label), info(`Classified by ${q.reason}.`)),
+    fact('Rarity', `${res.stats.class_count.toLocaleString()} of ${res.stats.total.toLocaleString()} measurements`),
   ];
   if (res.earth_ref) {
     const e = res.earth_ref;
     const src = 'CSA lab standard measured by the flight APXS';
-    facts.push(fact('Earth analogue', e.similarity >= 50 ? `${e.name} — ${e.kind} (${e.similarity}% similar; ${src})`
-      : e.similarity >= 20 ? `Loosely resembles ${e.name} — ${e.kind} (${e.similarity}%; ${src})`
-        : `None close among the ${S.meta.earth_refs} CSA lab standards (closest: ${e.name}, ${e.similarity}%) — unlike common Earth rocks`));
+    facts.push(fact('Earth analogue', e.similarity >= 20 ? `${e.name}, ${e.kind.split(' (')[0].toLowerCase()} (${e.similarity}%)` : 'None close', info(
+      `Closest of the ${S.meta.earth_refs} Earth reference rocks measured by the flight APXS before launch (CSA): ${e.name}, ${e.similarity}% similar.`)));
   }
   if (res.nearest_same_class) {
     const n = res.nearest_same_class;
     facts.push(fact('Nearest same type', h('a', { href: '#', onclick: (e) => { e.preventDefault(); showDetail(n.id); } }, n.name),
-      ` — ${fmtDist(n.distance_m)} away (${n.rover}, sol ${n.sol})`));
+      `, ${fmtDist(n.distance_m)} away`));
   }
   $('facts').replaceChildren(...facts);
-  $('card-guide').hidden = true;
   const insights = [];
   if (q.context?.why || q.context?.drivers?.length) {
-    insights.push(h('div', { class: 'query-why why' }, h('h3', { style: { marginTop: 0 } }, 'Why your reading looks like this'), ...whyBlock(q.context, false)));
+    insights.push(section('Why it looks like this', '', { open: true, help: q.context.caveat }, h('div', { class: 'why' }, ...whyBlock(q.context, false))));
   }
   insights.push(predictionsBlock(q));
   $('insights').replaceChildren(...insights);
@@ -441,7 +447,7 @@ function renderResult(res) {
     const li = h('li', { class: 'match', tabindex: 0, 'data-id': m.id, 'aria-label': `${m.name}, ${m.similarity}% similar` },
       h('div', { class: 'm-top' }, h('span', { class: 'rank' }, String(i + 1)), h('span', { class: 'm-name' }, m.name), h('span', { class: 'm-sim' }, `${m.similarity}%`)),
       h('div', { class: 'meter', 'aria-hidden': 'true' }, h('i', { style: { width: `${m.similarity}%` } })),
-      h('div', { class: 'm-sub' }, dot(classColor(m.deposit)), `${classLabel(m.deposit)} · ${m.rover} · sol ${m.sol}${m.distance_m != null ? ` · ${fmtDist(m.distance_m)} away` : ''}`));
+      h('div', { class: 'm-sub' }, dot(classColor(m.deposit)), `${classLabel(m.deposit)} · ${m.rover}, sol ${m.sol}${m.distance_m != null ? ` · ${fmtDist(m.distance_m)}` : ''}`));
     const open = () => { showDetail(m.id); };
     li.addEventListener('click', open);
     li.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
@@ -466,6 +472,7 @@ async function showDetail(id, { fromMap = false } = {}) {
   }
   S.detail = d;
   S.spectrum = null;
+  if (!$('card-eva').hidden && !fromMap) setMode('identify');
   if (!fromMap) toGlobe({ type: 'rm:select', id, fly: true });
   $('card-detail').hidden = false;
   $('d-title').textContent = d.name;
@@ -475,15 +482,17 @@ async function showDetail(id, { fromMap = false } = {}) {
   $('d-meta').textContent = bits.join(' · ');
   renderClassChip(d);
   renderComposition(d.chemistry);
-  $('d-why').replaceChildren(...whyBlock(d.context || {}), d.minerals ? mineralsBlock(d.minerals) : '');
+  $('d-why').replaceChildren(...whyBlock(d.context || {}), d.minerals ? mineralsBlock(d.minerals, true) : '');
   markActive();
   renderSpider();
   renderValues();
   renderProvenance(d);
   loadPhotos(d);
   loadSpectrum(d);
-  if (matchMedia('(max-width: 1000px)').matches) $('card-detail').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  $('d-back').hidden = $('card-result').hidden;
+  $('card-detail').scrollIntoView({ behavior: 'smooth', block: 'start' });   // the card opens below the fold otherwise
 }
+$('d-back').addEventListener('click', () => $('card-result').scrollIntoView({ behavior: 'smooth', block: 'start' }));
 
 function renderClassChip(d) {
   const kids = [h('span', { class: 'rover-badge' }, h('i', { style: { background: ROVER_COLOR[d.rover] } }), d.rover),
@@ -493,7 +502,7 @@ function renderClassChip(d) {
   if (d.note) {
     const sulfur = /S assumed as SO3/i.test(d.note);
     kids.push(h('span', { class: 'chip note-chip', title: 'Note from the NASA PDS concentration table' },
-      `NASA note: ${d.note}${sulfur ? ' — APXS reports all sulfur as SO3; values this high with almost no Ca or Mg to form sulfate point to elemental sulfur' : ''}`));
+      `NASA note: ${d.note}${sulfur ? '. APXS reports all sulfur as SO3; with so little Ca or Mg this points to elemental sulfur' : ''}`));
   }
   kids.push(h('div', { class: 'reason', style: { width: '100%' } }, `Classified by: ${d.deposit_reason}.`));
   $('d-class').replaceChildren(...kids);
@@ -613,6 +622,7 @@ async function openData() {
     h('p', { class: 'lead' }, 'Every figure below is measured on data the method was not allowed to see. The tests run each time the dataset is built.'),
     h('div', { class: 'tiles' },
       tile(`${m.remeasure_top1_pct}%`, 'known rock found first', `in the top five ${m.remeasure_top5_pct}% of the time`),
+      val.spectra ? tile(`${val.spectra.quarter_counts_found_pct}%`, 'spectrum matched to its rock', 'from a quarter of the counts') : '',
       tile(`${m.remeasure_same_type_pct}%`, 'deposit type right', 'for the closest match of a re-measured rock'),
       tile(`${nb.top1_pct}%`, 'new-stop forecast right', `always guessing basalt: ${nb.baseline_pct}%`),
       tile(`${nb.top3_pct}%`, 'right type in the top three', `${(nb.n || 0).toLocaleString()} held-out measurements`)),
@@ -640,6 +650,18 @@ async function openData() {
           ...ox.flatMap((o) => [h('td', { class: 'num' }, s.predicted[o].toFixed(2)), h('td', { class: 'num' }, s.measured[o].toFixed(2))]))),
           h('tr', { class: 'worst' }, h('td', {}, 'Largest difference'), ...ox.flatMap((o) => [h('td', { class: 'num', colspan: 2 }, `±${gr.error_pct[o]}%`)])))));
   }
+  const sp = val.spectra, tr = val.terrain;
+  if (sp) kids.push(h('h3', {}, 'Spectrum lab'),
+    h('ul', { class: 'method' },
+      h('li', {}, h('b', {}, 'Quick-look reading. '), `${sp.n} Curiosity spectra were re-counted with only a quarter of their counts (real Poisson noise). `,
+        `The original rock was the closest spectrum ${sp.quarter_counts_found_pct}% of the time.`),
+      h('li', {}, h('b', {}, 'New target. '), `With every spectrum from the same sol hidden, the closest remaining spectrum had the same deposit type ${sp.other_sol_same_type_pct}% of the time.`)));
+  if (tr) kids.push(h('h3', {}, 'EVA planner terrain'),
+    h('ul', { class: 'method' },
+      h('li', {}, h('b', {}, 'Height scale. '), `NASA's HiRISE Gale DEM is served as 8-bit grey levels. Fitted to ${tr.n_waypoints.toLocaleString()} Curiosity waypoint elevations, `,
+        `one grey level is ${tr.grey_step_m} m and the fit's typical error is ${tr.residual_sd_m} m (median ${tr.median_abs_m} m), about what rounding to whole grey levels alone gives.`),
+      tr.curiosity_route ? h('li', {}, h('b', {}, 'Real route check. '), `Along the route Curiosity actually drove, this terrain model gives a median slope of ${tr.curiosity_route.median_slope_deg}°, `,
+        `and ${tr.curiosity_route.under_15_pct}% of the route is under the planner's default 15° limit.`) : ''));
   kids.push(h('h3', {}, 'What Regolith does not claim'),
     h('ul', { class: 'method' },
       h('li', {}, 'APXS measures elements, not minerals. Deposit types and mineral amounts are readings of bulk chemistry, not identifications.'),
@@ -649,58 +671,214 @@ async function openData() {
   box.replaceChildren(...kids);
 }
 
-/* ---------------------------------------------------------------- predictions (estimates, with their basis) */
+/* ====================================================================== spectrum lab (CSA's APXS spectra) */
+const LAB = { list: null, ids: new Map(), src: null, busy: false };
+const labLabel = (s) => (s.kind === 'ref' ? `${s.name} · CSA lab standard` : `${s.name} · ${s.rover}, sol ${s.sol}`);
+async function openLab() {
+  if (LAB.list) return;
+  try { LAB.list = (await api('/spectra')).spectra; }
+  catch (e) { $('lab-body').replaceChildren(h('p', { class: 'note' }, `Could not load spectra: ${e.message}`)); return; }
+  $('lab-list').replaceChildren(...LAB.list.map((s) => { LAB.ids.set(labLabel(s), s.id); return h('option', { value: labLabel(s) }); }));
+  const first = LAB.list.find((s) => s.id === 'MSL-3907-Kythira') || LAB.list[0];
+  $('lab-search').value = labLabel(first);
+  runLab({ source_id: first.id });
+}
+async function runLab(src) {
+  LAB.src = src;
+  const keep = +$('lab-keep').value / 100;
+  const body = src.csv ? { csv: src.csv } : { source_id: src.source_id, keep, exclude_self: $('lab-hide').checked };
+  $('lab-body').classList.add('loading');
+  let d;
+  try { d = await postJson('/spectrum/match', body); }
+  catch (e) { $('lab-body').classList.remove('loading'); $('lab-body').replaceChildren(h('p', { class: 'note' }, e.message)); return; }
+  $('lab-body').classList.remove('loading');
+  if (LAB.src !== src) return;
+  const q = d.query, c1 = css('--series-1'), c2 = css('--series-2');
+  const title = q ? (q.kind === 'ref' ? `${q.name}: ${q.description}` : `${q.name} · ${q.rover}, sol ${q.sol}`) : 'Your uploaded spectrum';
+  const sub = `${d.total_counts.toLocaleString()} counts${q && d.keep < 1 ? ` · ${Math.round(d.keep * 100)}% counting time` : ''}`;
+  const chart = h('div', { class: 'lab-chart' });
+  const legend = h('div', { class: 'legend' }, h('span', {}, h('i', { class: 'key', style: { background: c1 } }), q ? 'This spectrum' : 'Uploaded spectrum'),
+    d.best_counts ? h('span', {}, h('i', { class: 'key', style: { background: c2 } }), `Closest other: ${d.best_name}`) : '');
+  const detected = d.peaks.filter((p) => p.detected);
+  const matchRow = (m, i) => h('li', { class: 'lab-m', tabindex: 0, title: `Shape similarity ${m.cosine.toFixed(4)} (cosine of square-root counts)`,
+    onclick: () => showDetail(m.id), onkeydown: (e) => { if (e.key === 'Enter') showDetail(m.id); } },
+    h('span', { class: 'rank' }, String(i + 1)),
+    h('span', { class: 'lab-mn' }, m.name, h('small', {}, `${m.rover}, sol ${m.sol}`)),
+    h('span', { class: 'lab-mc' }, dot(familyColor(m.deposit)), classLabel(m.deposit)),
+    h('span', { class: 'pval' }, `${m.similarity}%`));
+  const sk = d.skill;
+  $('lab-body').replaceChildren(
+    h('div', { class: 'lab-title' }, h('b', {}, title), h('span', { class: 'note' }, sub)),
+    legend, chart,
+    h('div', { class: 'lab-detected' }, h('span', { class: 'note', style: { margin: 0 } }, 'Detected'), info('Element lines at least 5σ above the local continuum. Argon (italic) is from the Martian air.'),
+      ...detected.map((p) => h('span', { class: `chip${p.air ? ' air' : ''}`, title: p.air ? 'Argon in the Martian air between the instrument and the rock' : `${p.sigma}σ above the continuum` }, p.el))),
+    h('div', { class: 'lab-cols' },
+      h('div', {}, h('h3', {}, 'Closest spectra on Mars', info('Compares spectrum shape (square-root counts), so it works whatever the counting time. Click a rock to open it.',
+        sk ? ` In a hold-out test a quarter-count spectrum found its own rock ${sk.quarter_counts_found_pct}% of the time.` : '')),
+        h('ol', { class: 'lab-list' }, ...d.matches.map(matchRow))),
+      h('div', {},
+        h('h3', {}, 'Likely deposit type', info('Weighted vote of the eight closest Curiosity spectra.',
+          sk ? ` With the whole sol hidden it matched the right type ${sk.other_sol_same_type_pct}% of the time.` : '')),
+        ...d.votes.slice(0, 4).map((v) => h('div', { class: 'prow' }, h('span', { class: 'pname' }, dot(familyColor(v.class)), v.label),
+          h('span', { class: 'pbar' }, h('i', { style: { width: `${v.pct}%`, background: familyColor(v.class) } })), h('span', { class: 'pval' }, `${v.pct}%`))),
+        h('h3', {}, 'Closest Earth standards', info('Earth reference rocks measured by the flight APXS before launch (CSA Open Data). They have no Martian air or dust, so they score lower than Mars rocks; the order is what matters.')),
+        h('ol', { class: 'lab-std' }, ...d.standards.slice(0, 4).map((s) => h('li', {}, h('b', {}, s.name), h('small', {}, ` ${(s.description || '').split(' (')[0]}`)))))));
+  requestAnimationFrame(() => labChart(chart, { energy: d.energy_kev, counts: d.counts, overlay: d.best_counts, overlayLabel: d.best_name, peaks: d.peaks, color: c1, overlayColor: c2 }));
+}
+$('lab-search').addEventListener('change', () => { const id = LAB.ids.get($('lab-search').value); if (id) runLab({ source_id: id }); });
+$('lab-random').addEventListener('click', () => {
+  const rocks = (LAB.list || []).filter((s) => s.kind === 'rock');
+  if (!rocks.length) return;
+  const s = rocks[Math.floor(Math.random() * rocks.length)];
+  $('lab-search').value = labLabel(s);
+  runLab({ source_id: s.id });
+});
+$('lab-keep').addEventListener('input', () => { $('lab-keep-val').textContent = `${$('lab-keep').value}%`; });
+$('lab-keep').addEventListener('change', () => { if (LAB.src?.source_id) runLab({ source_id: LAB.src.source_id }); });
+$('lab-hide').addEventListener('change', () => { if (LAB.src?.source_id) runLab({ source_id: LAB.src.source_id }); });
+$('lab-file').addEventListener('change', async (e) => {
+  const f = e.target.files[0];
+  if (!f) return;
+  $('lab-search').value = '';
+  runLab({ csv: await f.text() });
+  e.target.value = '';
+});
+
+/* ====================================================================== EVA planner */
+const GALE_BOX = [137.1224711, -4.9254743, 137.7298129, -4.2489631];   // MRO HiRISE Gale DEM (NASA Mars Trek)
+const inGale = (p) => p && p.lon >= GALE_BOX[0] && p.lon <= GALE_BOX[2] && p.lat >= GALE_BOX[1] && p.lat <= GALE_BOX[3];
+const fmtHM = (min) => `${Math.floor(min / 60)}:${String(Math.round(min % 60)).padStart(2, '0')}`;
+const LETTERS = 'ABCDEFGHIJKLMNOP';
+function evaStartNote() {
+  const p = getPos();
+  $('eva-start').textContent = !p ? 'Pick a start on the map, inside Gale crater.'
+    : inGale(p) ? `Start ${fmtLL(p.lat, p.lon)}` : 'Start must be inside Gale crater.';
+  $('eva-btn').disabled = !inGale(p);
+}
+[['eva-hours', (v) => `${v} h`], ['eva-slope', (v) => `${v}°`], ['eva-stop', (v) => `${v} min`], ['eva-speed', (v) => `${v} km/h`]].forEach(([id, f]) => {
+  $(id).addEventListener('input', () => { $(`${id}-v`).textContent = f($(id).value); });
+});
+['lat', 'lon'].forEach((id) => $(id).addEventListener('input', evaStartNote));
+$('eva-example').addEventListener('click', () => { setPosition(-4.725, 137.385); evaStartNote(); toGlobe({ type: 'rm:fly', lat: -4.725, lon: 137.385, alt_km: 6 }); });
+$('eva-btn').addEventListener('click', planEva);
+async function planEva() {
+  const p = getPos();
+  if (!inGale(p)) return evaStartNote();
+  const btn = $('eva-btn');
+  btn.disabled = true; btn.textContent = 'Planning…';
+  let r;
+  try {
+    r = await postJson('/plan', { lat: p.lat, lon: p.lon, hours: +$('eva-hours').value, max_slope_deg: +$('eva-slope').value,
+      stop_min: +$('eva-stop').value, speed_kmh: +$('eva-speed').value });
+  } catch (e) {
+    $('eva-body').replaceChildren(h('p', { class: 'note' }, e.message));
+    return;
+  } finally { btn.disabled = false; btn.textContent = 'Plan route'; }
+  S.route = r;
+  const s = r.summary, color = '#e8b72f';
+  r.stops.forEach((st, i) => {
+    st.letter = LETTERS[i];
+    let best = 0;
+    r.path.forEach((q, k) => { if ((q[0] - st.lat) ** 2 + (q[1] - st.lon) ** 2 < (r.path[best][0] - st.lat) ** 2 + (r.path[best][1] - st.lon) ** 2) best = k; });
+    st.pathIndex = best;
+  });
+  toGlobe({ type: 'rm:route', line: r.line, start: r.start, stops: r.stops.map((st) => ({ lat: st.lat, lon: st.lon, letter: st.letter, label: st.label, eta: fmtHM(st.arrive_min) })) });
+  if (!r.stops.length) {
+    $('eva-body').replaceChildren(h('p', { class: 'note' }, 'Nothing reachable in that time. Try a longer EVA or another start.'));
+    return;
+  }
+  const tile = (v, l) => h('div', { class: 'etile' }, h('b', {}, v), h('span', {}, l));
+  const prof = h('div', { class: 'chart eva-prof' });
+  $('eva-body').replaceChildren(
+    h('div', { class: 'etiles' }, tile(String(s.new_types), `rock type${s.new_types === 1 ? '' : 's'}`), tile(`${s.distance_km} km`, 'distance'),
+      tile(`${s.gain_m} m`, 'climb'), tile(fmtHM(s.total_h * 60), 'total time')),
+    h('p', { class: 'note' }, `${fmtHM(s.walk_h * 60)} walking · ${fmtHM(s.stops_h * 60)} sampling · ${fmtHM(s.reserve_h * 60)} spare · steepest ${s.steepest_deg}°`,
+      info(`Terrain: ${r.terrain.product}, height scale fitted to ${r.terrain.n_waypoints.toLocaleString()} Curiosity waypoints (±${r.terrain.residual_sd_m} m), in ${r.settings.cell_m} m cells. `,
+        'Walking speed falls with slope (Tobler\'s hiking curve). Rarer deposit types are worth more; a second site of a type adds less. ',
+        `${r.settings.reserve_pct}% of the time is kept in reserve. Features under about 100 m are not resolved.`)),
+    prof,
+    h('ol', { class: 'eva-stops' },
+      h('li', { class: 'start' }, h('span', { class: 'eletter start' }, 'S'), h('span', {}, 'Start', h('small', {}, `${r.start.elev_m != null ? `${Math.round(r.start.elev_m).toLocaleString()} m` : ''}`)), h('span', { class: 'pval' }, '0:00')),
+      ...r.stops.map((st) => h('li', { tabindex: 0, title: 'Open the rock measured here', onclick: () => st.members?.[0] && showDetail(st.members[0]),
+        onkeydown: (e) => { if (e.key === 'Enter' && st.members?.[0]) showDetail(st.members[0]); } },
+        h('span', { class: 'eletter' }, st.letter),
+        h('span', {}, dot(familyColor(st.class)), st.label, h('small', {}, st.names.join(', '))),
+        h('span', { class: 'pval' }, fmtHM(st.arrive_min)))),
+      h('li', { class: 'start' }, h('span', { class: 'eletter start' }, 'S'), h('span', {}, 'Back at start'), h('span', { class: 'pval' }, fmtHM(s.total_h * 60)))),
+    r.missed.length ? h('p', { class: 'note' }, `Also nearby: ${r.missed.slice(0, 3).map((m) => m.label).join(', ')}. Add time to include them.`) : '',
+    h('div', { class: 'row' }, h('button', { class: 'btn ghost small', type: 'button', onclick: clearRoute }, 'Clear route')));
+  requestAnimationFrame(() => profileChart(prof, { path: r.path, stops: r.stops, color }));
+  selectTab('map');
+}
+function clearRoute() { S.route = null; $('eva-body').replaceChildren(); toGlobe({ type: 'rm:route', clear: true }); }
+evaStartNote();
+// side panel: two tools, one visible at a time
+function setMode(mode) {
+  document.querySelectorAll('.modes [data-mode]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.mode === mode)));
+  $('card-eva').hidden = mode !== 'eva';
+  ['card-identify', 'card-result', 'card-detail'].forEach((id) => { $(id).classList.toggle('mode-hidden', mode !== 'identify'); });
+  document.querySelector('.side').scrollTop = 0;
+}
+document.querySelectorAll('.modes [data-mode]').forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
+
+/* ---------------------------------------------------------------- shared UI pieces */
 const pbar = (pct, color) => h('span', { class: 'pbar' }, h('i', { style: { width: `${Math.max(1, Math.min(100, pct))}%`, background: color || 'var(--series-1)' } }));
-function mineralsBlock(m) {
-  const box = h('div', { class: 'pred' }, h('h3', {}, 'Likely minerals ', h('span', { class: 'est' }, 'estimate')));
-  if (!m.minerals.length) box.append(h('p', { class: 'note' }, 'No salt, sulfate or phosphate above 0.5 wt% - mostly silicate (basalt) minerals.'));
-  m.minerals.forEach((x) => box.append(h('div', { class: 'prow', title: x.note },
-    h('span', { class: 'pname' }, x.name, h('small', {}, x.formula)), pbar(x.wt), h('span', { class: 'pval' }, `up to ${x.wt} wt%`))));
-  box.lastChild && box.classList.add('minerals');
-  m.unassigned.forEach((t) => box.append(h('p', { class: 'note' }, t)));
-  box.append(h('p', { class: 'caveat' }, m.basis));
-  return box;
+// "i" button: the method behind a number, shown on hover or tap instead of a paragraph under every block
+function info(...text) {
+  const tip = h('span', { class: 'info-tip', role: 'tooltip' }, ...text);
+  return h('span', { class: 'info', tabindex: 0, 'aria-label': 'How this is worked out' }, icon('info', 'ic info-ic'), tip);
+}
+// collapsible section: a title, a one-line answer, and the details underneath
+function section(title, answer, { open = false, help } = {}, ...body) {
+  return h('details', { class: 'sec', open },
+    h('summary', {}, h('span', { class: 'sec-t' }, title), help ? info(...[].concat(help)) : '', h('span', { class: 'sec-a' }, answer || ''), icon('chev', 'ic chev')),
+    h('div', { class: 'sec-b' }, ...body));
+}
+
+/* ---------------------------------------------------------------- predictions */
+function mineralsBlock(m, open = false) {
+  const top = m.minerals.slice().sort((a, b) => b.wt - a.wt)[0];
+  const rows = m.minerals.map((x) => h('div', { class: 'prow minerals', title: x.note },
+    h('span', { class: 'pname' }, x.name, h('small', {}, x.formula)), pbar(x.wt), h('span', { class: 'pval' }, `≤ ${x.wt}%`)));
+  return section('Likely minerals', top ? `${top.name} ≤ ${top.wt}%` : 'Mostly silicate', { open, help: [m.basis, ' Values are upper limits in wt%.'] },
+    ...(rows.length ? rows : [h('p', { class: 'note' }, 'No salt, sulfate or phosphate above 0.5 wt%.')]),
+    ...m.unassigned.map((t) => h('p', { class: 'note' }, t)));
 }
 function predictionsBlock(q) {
   const box = h('div', { class: 'preds' });
   if (q.minerals) box.append(mineralsBlock(q.minerals));
   const f = q.forecast;
   if (!f) {
-    box.append(h('p', { class: 'note' }, 'Set your position to also predict what is around you.'));
+    box.append(h('p', { class: 'note' }, 'Add your position to see what is nearby and how much water the soil holds.'));
     return box;
   }
-  const near = h('div', { class: 'pred' }, h('h3', {}, 'What you will likely find within 1 km ', h('span', { class: 'est' }, 'estimate')));
   if (f.nearby) {
-    near.append(h('p', { class: 'hint' }, `If you sample a rock here: based on ${f.nearby.n.toLocaleString()} ${f.nearby.rovers.join(' and ')} measurements `,
-      `within 1 km (sols ${f.nearby.sols[0]}–${f.nearby.sols[1]}), closer ones counting more. Nearest: ${f.nearby.nearest.name}, ${fmtDist(f.nearby.nearest.distance_m)} away.`));
-    f.nearby.odds.forEach((o) => near.append(h('div', { class: 'prow' },
-      h('span', { class: 'pname' }, dot(classColor(o.class)), o.label), pbar(o.pct, classColor(o.class)), h('span', { class: 'pval' }, `${o.pct}%`))));
-    const k = f.nearby.skill;
-    if (k) near.append(h('p', { class: 'skill' }, h('b', {}, 'How reliable: '), `tested on ${k.n.toLocaleString()} measurements with their whole rover stop hidden, `,
-      `the top prediction was right ${Math.round(k.top1_pct)}% of the time (always guessing basalt: ${Math.round(k.baseline_pct)}%) `,
-      `and the right type was in the top three ${Math.round(k.top3_pct)}% of the time.`));
-    near.append(h('p', { class: 'caveat' }, f.nearby.caveat));
-  } else {
-    near.append(h('p', { class: 'note' }, 'No rover measured rocks within 1 km of this position, so there is no local prediction. The orbital estimates below still apply.'));
+    const k = f.nearby.skill, top = f.nearby.odds[0];
+    box.append(section('Within 1 km', `${top.label} ${top.pct}%`, {
+      help: [`From ${f.nearby.n.toLocaleString()} ${f.nearby.rovers.join(' and ')} measurements within 1 km; closer ones count more. `,
+        k ? `In a hold-out test the top type was right ${Math.round(k.top1_pct)}% of the time (always guessing basalt: ${Math.round(k.baseline_pct)}%). ` : '',
+        f.nearby.caveat] },
+    ...f.nearby.odds.map((o) => h('div', { class: 'prow' },
+      h('span', { class: 'pname' }, dot(classColor(o.class)), o.label), pbar(o.pct, classColor(o.class)), h('span', { class: 'pval' }, `${o.pct}%`))),
+    h('p', { class: 'note' }, `Nearest measured rock: ${f.nearby.nearest.name}, ${fmtDist(f.nearby.nearest.distance_m)} away.`)));
   }
-  box.append(near);
   if (f.water) {
     const w = f.water;
-    box.append(h('div', { class: 'pred' }, h('h3', {}, 'Water you could extract here ', h('span', { class: 'est' }, 'estimate')),
-      h('div', { class: 'wbig' }, h('b', {}, `about ${w.practical_l_t ?? w.upper_l_t} L`), ' per tonne of soil',
-        w.practical_l_t != null ? h('span', { class: 'note' }, ` · up to ${w.upper_l_t} L if all of it were released`) : ''),
-      h('p', { class: 'caveat' }, `Odyssey measured ${w.h2o_wt.toFixed(1)} wt% water-equivalent hydrogen in this 5° cell. `,
-        w.share ? `When Curiosity heated Gale soil to 835 °C, it released about 2 wt% water, ${Math.round(w.share * 100)}% of Odyssey's value there; the practical figure assumes the same share. ` : '',
-        h('a', { href: f.sources.sam.url, target: '_blank', rel: 'noopener' }, 'NASA: SAM finds water in soil', icon('ext', 'ic sm')))));
+    box.append(section('Water in the soil', `~${w.practical_l_t ?? w.upper_l_t} L per tonne`, {
+      help: [`Odyssey measured ${w.h2o_wt.toFixed(1)} wt% water-equivalent hydrogen here (1 wt% = 10 L per tonne). `,
+        w.share ? `Heating Gale soil to 835 °C, Curiosity's SAM released about 2 wt%, ${Math.round(w.share * 100)}% of Odyssey's value there; the estimate assumes the same share.` : ''] },
+    h('div', { class: 'wbig' }, h('b', {}, `${w.practical_l_t ?? w.upper_l_t} L`), ' per tonne of soil',
+      w.practical_l_t != null ? h('span', { class: 'note' }, ` (up to ${w.upper_l_t} L)`) : ''),
+    h('a', { class: 'src-link', href: f.sources.sam.url, target: '_blank', rel: 'noopener' }, 'NASA: SAM finds water in soil', icon('ext', 'ic sm'))));
   }
   if (f.ground?.predicted && Object.keys(f.ground.predicted).length) {
     const err = f.ground.check?.error_pct || {};
-    box.append(h('div', { class: 'pred' }, h('h3', {}, 'Soil an APXS would likely read here ', h('span', { class: 'est' }, 'from orbit')),
-      h('div', { class: 'soil' }, ...Object.entries(f.ground.predicted).map(([ox, v]) =>
-        h('span', {}, h('b', {}, ox), ` ${v} wt%`, err[ox] != null ? h('small', {}, ` ±${err[ox]}%`) : ''))),
-      h('p', { class: 'caveat' }, 'Odyssey Fe, Si, K and Cl converted to oxides. "±" is the largest difference from the rovers\' own soil measurements at Gale, Gusev and Meridiani.'),
-      f.zones.length ? h('p', { class: 'hint' }, 'Inside prospect zones: ', f.zones.map((z) => z.label).join(', ')) : ''));
-  }
+    box.append(section('Soil from orbit', `FeO ${f.ground.predicted.FeO} · SiO2 ${f.ground.predicted.SiO2} wt%`, {
+      help: 'Odyssey iron, silicon, potassium and chlorine converted to the oxides an APXS reports. ± is the largest miss against the rovers\' own soils at Gale, Gusev and Meridiani.' },
+    h('div', { class: 'soil' }, ...Object.entries(f.ground.predicted).map(([ox, v]) =>
+      h('span', {}, h('b', {}, ox), ` ${v}%`, err[ox] != null ? h('small', {}, ` ±${err[ox]}%`) : ''))),
+    f.zones.length ? h('p', { class: 'note' }, `Prospect zones here: ${f.zones.map((z) => z.label).join(', ')}`) : ''));
+  } else if (f.masked) box.append(h('p', { class: 'note' }, 'No orbital soil data this close to the pole.'));
   return box;
 }
 
@@ -715,7 +893,6 @@ function whyBlock(ctx, region = true) {
   }
   if (region && ctx.region) kids.push(h('div', { class: 'region' }, h('b', {}, icon('pin', 'ic sm'), ctx.region.name), h('span', {}, ctx.region.note)));
   if (ctx.links?.length) kids.push(h('ul', { class: 'nasa-links' }, ...ctx.links.map((l) => h('li', {}, h('a', { href: l.url, target: '_blank', rel: 'noopener' }, l.title, icon('ext', 'ic sm'))))));
-  if (ctx.caveat) kids.push(h('div', { class: 'caveat' }, ctx.caveat));
   return kids;
 }
 

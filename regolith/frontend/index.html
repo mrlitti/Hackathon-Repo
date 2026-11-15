@@ -26,6 +26,7 @@
       <nav class="tabs" role="tablist" aria-label="Views">
         <button role="tab" id="tabbtn-map" aria-controls="tab-map" aria-selected="true" data-tab="map">Map</button>
         <button role="tab" id="tabbtn-deposits" aria-controls="tab-deposits" aria-selected="false" data-tab="deposits">Deposits</button>
+        <button role="tab" id="tabbtn-spectrum" aria-controls="tab-spectrum" aria-selected="false" data-tab="spectrum">Spectrum lab</button>
         <button role="tab" id="tabbtn-data" aria-controls="tab-data" aria-selected="false" data-tab="data">Data &amp; methods</button>
       </nav>
       <div class="panel-wrap">
@@ -56,11 +57,35 @@
             <div class="dep-legend" id="dep-legend" aria-label="Colour key"></div>
             <div class="dep-classes" id="dep-classes"></div>
             <h3>Deposit sites <span id="dep-count"></span></h3>
-            <p class="hint">Measurements of the same deposit type within 250 m of each other are grouped into one site.</p>
+            <p class="hint">Same-type measurements within 250 m count as one site.</p>
             <table class="dep-table">
               <thead><tr><th>Deposit type</th><th>Rover</th><th class="num">Measurements</th><th class="num">Sols</th><th>Example targets</th><th></th></tr></thead>
               <tbody id="dep-rows"></tbody>
             </table>
+          </div>
+        </div>
+
+        <div class="tabpanel" id="tab-spectrum" role="tabpanel" aria-labelledby="tabbtn-spectrum" hidden>
+          <div class="dep lab">
+            <div class="lab-head">
+              <div>
+                <h2 class="data-h">Spectrum lab</h2>
+                <p class="lead">Match a raw X-ray spectrum from the Canadian Space Agency's APXS against 1,760 Curiosity spectra.</p>
+              </div>
+            </div>
+            <div class="lab-tools">
+              <label class="lab-field">Spectrum
+                <input id="lab-search" list="lab-list" placeholder="Search a rock or CSA standard…" autocomplete="off">
+                <datalist id="lab-list"></datalist>
+              </label>
+              <button class="btn" id="lab-random" type="button">Random rock</button>
+              <label class="btn ghost file">Upload CSV<input type="file" id="lab-file" accept=".csv,.txt" hidden></label>
+              <label class="lab-field lab-keep">Counting time <span id="lab-keep-val">25%</span>
+                <input type="range" id="lab-keep" min="5" max="100" step="5" value="25">
+              </label>
+              <label class="lab-check" title="Test it on an unseen rock"><input type="checkbox" id="lab-hide"> Treat as unknown</label>
+            </div>
+            <div id="lab-body"><p class="note">Loading…</p></div>
           </div>
         </div>
 
@@ -72,9 +97,13 @@
     </section>
 
     <aside class="side">
+      <div class="modes" role="tablist" aria-label="Tools">
+        <button role="tab" aria-selected="true" data-mode="identify" id="mode-identify">Identify a rock</button>
+        <button role="tab" aria-selected="false" data-mode="eva" id="mode-eva">Plan an EVA</button>
+      </div>
       <section class="card" id="card-identify" aria-labelledby="h-identify">
         <header class="card-h"><span class="step">1</span><h2 id="h-identify">Field reading</h2></header>
-        <p class="hint">Enter an APXS reading: oxides in wt %, Ni / Zn / Br in ppm. At least 3 elements.</p>
+        <p class="hint">Set your APXS reading, or simulate one from a real rover measurement.</p>
         <div class="row">
           <select id="sim-class" aria-label="Deposit type to simulate"></select>
           <button class="btn" id="sim-btn" title="Fill the form with a real measurement plus instrument noise">Simulate</button>
@@ -107,18 +136,26 @@
         <div id="insights"></div>
       </section>
 
-      <section class="card guide" id="card-guide" aria-labelledby="h-guide">
-        <h2 id="h-guide">How it works</h2>
-        <ol>
-          <li><b>Take a reading.</b> Set the sliders to your APXS values, or press Simulate to load a real rover measurement with its instrument noise.</li>
-          <li><b>Find match.</b> Regolith compares it with all 2,475 APXS measurements and tells you whether to sample, what the rock likely is, and why.</li>
-          <li><b>Look ahead.</b> See the likely minerals, what is within 1 km, and the water in the soil. On the map, turn on an element map or prospect zones.</li>
-        </ol>
-        <p class="note">Built only from NASA and Canadian Space Agency data. See the Data &amp; methods tab for every source and the accuracy tests.</p>
+      <section class="card" id="card-eva" aria-label="Plan an EVA" hidden>
+        <p class="hint" id="h-eva">A round-trip walk in Gale crater that samples as many rare rock types as time allows.</p>
+        <div class="eva-grid">
+          <label>Duration <b id="eva-hours-v">4 h</b><input type="range" id="eva-hours" min="1" max="8" step="0.5" value="4"></label>
+          <label>Steepest slope <b id="eva-slope-v">15°</b><input type="range" id="eva-slope" min="5" max="25" step="1" value="15"></label>
+          <label>Each sample stop <b id="eva-stop-v">20 min</b><input type="range" id="eva-stop" min="5" max="60" step="5" value="20"></label>
+          <label>Walking speed <b id="eva-speed-v">2.5 km/h</b><input type="range" id="eva-speed" min="1" max="4" step="0.5" value="2.5"></label>
+        </div>
+        <div class="row">
+          <span class="note" id="eva-start" style="margin:0;flex:1">Start: your Position above, inside Gale crater.</span>
+          <button class="btn ghost small" id="eva-example" type="button">Use example</button>
+          <button class="btn primary" id="eva-btn" type="button">Plan route</button>
+        </div>
+        <div id="eva-body"></div>
       </section>
 
+
       <section class="card" id="card-detail" aria-labelledby="d-title" hidden>
-        <header class="card-h"><span class="step">3</span><h2 id="d-title">Rock detail</h2></header>
+        <header class="card-h"><span class="step">3</span><h2 id="d-title">Rock detail</h2>
+          <button class="btn small ghost back" id="d-back" type="button">Back to results</button></header>
         <div class="d-meta" id="d-meta"></div>
         <div class="hero" id="d-photos"></div>
         <div class="chip-row" id="d-class"></div>

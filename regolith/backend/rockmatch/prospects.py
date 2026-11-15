@@ -17,27 +17,20 @@ KINDS = {
     "salt": {
         "label": "Salt basin candidates", "short": "Salt basin",
         "rule": "Odyssey GRS chlorine in the planet's top 15% and ground lower than the median (MOLA)",
-        "why": "Chloride salts are left behind where salty water pools and evaporates, and water collects in low "
-               "ground. So low-lying, chlorine-rich areas are the likeliest places for salt deposits like the "
-               "chlorine-rich rocks Curiosity measured in Gale crater (up to 19.75 wt% Cl with sodium to match, "
-               "consistent with rock salt).",
+        "why": "Salty water pools in low ground and leaves salt behind as it evaporates. Curiosity found chlorine-rich, salt-like rocks in Gale crater (up to 19.75 wt% Cl).",
         "related": ["halide"], "grs": "Cl", "low": True, "link": "salty",
     },
     "water": {
         "label": "Water-rich ground", "short": "Water-rich ground",
         "rule": "Odyssey GRS water-equivalent hydrogen in the planet's top 15% (NASA has no data near the poles)",
-        "why": "Gamma rays from hydrogen show water held in roughly the top few tens of centimetres. At these "
-               "latitudes it is most likely bound in hydrated minerals such as clays and sulfates, or possibly "
-               "buried ice - either way, the best places outside the poles to extract water.",
+        "why": "Hydrogen in the top few tens of centimetres, most likely water bound in clays and sulfates, or buried ice: the best water sources outside the poles.",
         "related": ["sulfate", "mg_sulfate", "fe_sulfate", "ca_sulfate", "al_clay"], "grs": "H2O", "low": False,
         "link": "odyssey",
     },
     "potassium": {
         "label": "Potassium-rich ground", "short": "Potassium-rich",
         "rule": "Odyssey GRS potassium in the planet's top 15%",
-        "why": "Potassium concentrates in magma that partly crystallised before erupting, so these areas are "
-               "candidates for alkali-rich igneous rock like the kind Curiosity found in Gale crater. Potassium can "
-               "also be concentrated by sediments or weathering, so this is a lead, not a rock identification.",
+        "why": "Potassium-rich ground can mark evolved volcanic rock, like the alkali-rich rocks Curiosity found. Sediments can also concentrate it, so treat it as a lead.",
         "related": ["alkali"], "grs": "K", "low": False, "link": "odyssey",
     },
 }

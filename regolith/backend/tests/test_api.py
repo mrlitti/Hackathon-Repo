@@ -382,3 +382,50 @@ def test_validation_and_sources(client):
     s = client.get("/api/sources").json()["sources"]
     assert {x["agency"] for x in s} == {"NASA", "CSA"}
     assert all(x["url"].startswith("https://") for x in s)
+
+
+def test_polar_forecast_has_no_partial_soil(client):
+    f = client.get("/api/forecast?lat=88&lon=10").json()        # NASA masks Fe, Si, Cl near the poles
+    assert f["ground"] is None and f["masked"] is True
+
+
+def test_mer_photos_use_nasa_image_host(client):
+    d = client.get("/api/rocks/MER-B-2764-Homestake/photos").json()
+    assert d["images"] and all(i["url"].startswith("https://planetarydata.jpl.nasa.gov/") for i in d["images"])
+
+
+# ------------------------------------------------------------------ EVA planner and spectrum lab
+
+def test_eva_plan_returns_a_closed_route_within_budget(client):
+    r = client.post("/api/plan", json={"lat": -4.725, "lon": 137.385, "hours": 4}).json()
+    s = r["summary"]
+    assert s["stops"] >= 3 and s["total_h"] <= 4 * 0.9 + 1e-6 and s["steepest_deg"] <= 15
+    assert r["path"][0][:2] == r["path"][-1][:2]                       # comes back to the start
+    assert len({st["class"] for st in r["stops"]}) == s["new_types"]
+
+
+def test_eva_plan_rejects_starts_without_hirise_terrain(client):
+    assert client.post("/api/plan", json={"lat": -2.0, "lon": -5.5, "hours": 4}).status_code == 422
+
+
+def test_gale_dem_calibration():
+    import json
+    from pathlib import Path
+    cal = json.loads((Path(__file__).resolve().parents[1] / "data" / "terrain" / "gale_dem.json").read_text())
+    assert cal["n_waypoints"] > 1500 and cal["residual_sd_m"] < 10
+    assert cal["curiosity_route"]["under_15_pct"] > 90                 # Curiosity's real route is passable
+
+
+def test_spectrum_lab_finds_a_quick_look_reading(client):
+    d = client.post("/api/spectrum/match", json={"source_id": "MSL-3907-Kythira", "keep": 0.1}).json()
+    assert d["matches"][0]["id"] == "MSL-3907-Kythira" and d["votes"][0]["class"] == "halide"
+    assert {"Cl", "Fe"} <= {p["el"] for p in d["peaks"] if p["detected"]}
+    hidden = client.post("/api/spectrum/match", json={"source_id": "MSL-3907-Kythira", "exclude_self": True}).json()
+    assert hidden["matches"][0]["id"] != "MSL-3907-Kythira"
+
+
+def test_spectrum_upload_csv(client):
+    lines = ["energy_keV,counts"] + [f"{1 + i * 0.024:.3f},{int(500 + 4000 * (abs(i - 225) < 3))}" for i in range(560)]
+    r = client.post("/api/spectrum/match", json={"csv": "\n".join(lines)})
+    assert r.status_code == 200 and r.json()["matches"]
+    assert client.post("/api/spectrum/match", json={"csv": "not a spectrum"}).status_code == 422

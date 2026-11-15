@@ -1,5 +1,21 @@
 # Regolith
 
+> **NASA Space Apps Challenge 2026 · Interplanetary Survival Guide: Martian Map**
+> Built only from NASA and Canadian Space Agency data.
+
+## The problem
+
+Astronauts on Mars will have limited time, limited sample space and no time to wait for scientists on
+Earth. Holding an APXS reading of a rock, they need to know on the spot: **is this rock new or already well
+studied, what is it and why does it look like this, and what else is around here, including water?**
+NASA and the CSA hold about 20 years of answers: 2,475 APXS measurements from Curiosity, Spirit and
+Opportunity, and planet-wide orbital maps. That knowledge sits in archive tables, not in a form someone
+in the field can use. Regolith turns it into a field guide, and shows how reliable each answer is.
+
+A 4-minute presentation walkthrough is in [docs/DEMO.md](docs/DEMO.md).
+
+## What it does
+
 **An APXS field guide for Mars astronauts.** An astronaut takes an APXS reading of a rock (or simulates one),
 and Regolith compares it against **all 2,475 APXS measurements** made by Curiosity, Spirit and Opportunity. It then:
 
@@ -17,6 +33,10 @@ and Regolith compares it against **all 2,475 APXS measurements** made by Curiosi
 - makes **predictions**, each labelled as an estimate with its assumptions: the minerals a reading likely
   contains, what you would likely find within 1 km, the water you could extract per tonne of soil, and the
   soil an APXS would likely read anywhere on Mars;
+- **plans an EVA**: a walking route over NASA's 1 m HiRISE terrain of Gale crater that visits the most valuable
+  deposit sites, keeps below a slope limit and returns to the start within the time budget;
+- has a **Spectrum lab**: match a raw APXS X-ray spectrum (or upload one) against all 1,760 Curiosity spectra and
+  the CSA lab standards, with the element lines labelled;
 - **shows its own accuracy**: hold-out tests run with every data build and appear in the Data & methods tab.
 
 Regolith uses **only NASA and Canadian Space Agency data**. Curiosity's APXS is Canada's contribution to that
@@ -30,6 +50,7 @@ comes from NASA's PDS.
 |---|---|
 | ![A matched rock, targeted on the map](docs/match.jpg) | ![Prospect zones judged from orbit](docs/prospects.jpg) |
 | ![Chlorine element map](docs/element.jpg) | ![Hold-out test results](docs/data.jpg) |
+| ![EVA planner route over the HiRISE terrain of Gale crater](docs/eva.jpg) | ![Spectrum lab matching a raw APXS spectrum](docs/lab.jpg) |
 
 ## Measured accuracy
 
@@ -45,6 +66,10 @@ Each figure is measured on data the method was not allowed to see (`backend/rock
 | Same forecast: right type in the top three | 85.9% |
 | Forecast percentages are honest: types given a 30–60% chance (average 42.0%) turned up | 44.1% of the time |
 | Soil composition predicted from orbit against rover soils at three sites, largest miss | SiO2 8%, Cl 16%, K2O 24%, FeO 26% |
+| Spectrum re-counted with a quarter of its counts is matched to its own rock | 99.3% |
+| With the whole sol hidden, the closest other spectrum has the same deposit type | 82.0% |
+| HiRISE Gale DEM height scale against 1,768 Curiosity waypoint elevations | ±6.0 m (one grey level is 18.6 m) |
+| Curiosity's real route under the planner's default 15° slope limit | 100% (median slope 5.7°) |
 
 ## Quick start
 
@@ -70,14 +95,14 @@ python backend/scripts/build_dataset.py   # parses, places on the map, classifie
 ```
 
 `fetch_data.py --no-spectra` skips the X-ray spectra (~5 MB instead of ~52 MB). Spectra that aren't downloaded
-are fetched once on demand and cached. `fetch_data.py --only grs` downloads just the Mars Odyssey GRS element maps, and `--only mola` the MOLA
-elevation tiles used by the prospect zones.
+are fetched once on demand and cached. `fetch_data.py --only grs` downloads just the Mars Odyssey GRS element maps, `--only mola` the MOLA
+elevation tiles used by the prospect zones, and `--only gale_dem` the HiRISE Gale terrain for the EVA planner.
 
 ### Tests
 
 ```bash
 pip install -r backend/requirements-dev.txt
-cd backend && python -m pytest -q          # 64 tests: classification, matching, element maps, predictions, hold-out results, API
+cd backend && python -m pytest -q          # 71 tests: classification, matching, element maps, predictions, hold-out results, API
 ```
 
 ## What's in the repo
@@ -115,6 +140,7 @@ mars-globe/                 3D Mars globe; embedded in Regolith and also works s
 | Raw images API, PDS Imaging Node | NASA/JPL-Caltech/MSSS, NASA/JPL/Cornell/USGS | MAHLI and Microscopic Imager close-ups | NASA public data |
 | [NASA Mars Trek](https://trek.nasa.gov/mars/) tiles: Viking MDIM 2.1, MGS MOLA, Odyssey THEMIS, MRO HiRISE, Viking Phobos mosaic | NASA/JPL-Caltech, USGS, ASU, UArizona | Globe imagery and elevation | NASA public data |
 | [Mars Odyssey GRS element maps](https://pds-geosciences.wustl.edu/ody/ody-m-grs-5-elements-v1/) (`ODY-M-GRS-5-ELEMENTS-V1.0`, smoothed 5°×5°) | NASA PDS Geosciences Node; Boynton et al. (2007), JGR 112, E12S99 | Orbital element concentration maps: Cl, Fe, Si, K, Th, water-equivalent hydrogen | Public domain |
+| [MRO HiRISE Gale Crater DEM](https://trek.nasa.gov/mars/) (`Gale_DEM_SMG_1m`, zoom 12) | NASA Mars Trek; MRO HiRISE | Terrain for the EVA planner, height scale fitted to Curiosity waypoint elevations | NASA public data |
 | [MGS MOLA elevation](https://trek.nasa.gov/mars/) (`Mars_MGS_MOLA_DEM_mosaic_global_463m_8`, zoom 2) | NASA Mars Trek | Mean elevation of every 5° cell for the prospect zones (checked: Curiosity and Spirit landing sites within 30 m) | NASA public data |
 | NASA/JPL news releases and mission pages | NASA/JPL-Caltech | "Why" links for each deposit type (for example the 2011 gypsum vein and 2022 salty-region releases) | NASA public data |
 | NASA Mars Trek layer "MRO CTX Mosaic Global" (`CTX_beta01_uncontrolled_5m_Caltech`) | NASA/JPL/MSSS (MRO CTX images), mosaic by Caltech. Tiles come from the server Trek's own capabilities file points to | Globe imagery (streamed at up to ~10 m/px) | NASA public data, credit required |
@@ -182,6 +208,17 @@ imagery; nothing is computed from it.
   - **Soil from orbit:** Odyssey Fe, Si, K and Cl converted to FeO, SiO2, K2O and Cl. This was checked against the
     rovers' own soil measurements at Gale, Gusev and Meridiani; the largest misses (FeO 26%, SiO2 8%, K2O 24%,
     Cl 16%) are shown with every prediction.
+- **EVA planner:** terrain is NASA Mars Trek's MRO HiRISE Gale Crater DEM (`Gale_DEM_SMG_1m`) read at about
+  10 m per pixel. Its 8-bit grey levels are converted to metres with a scale fitted to all 1,768 Curiosity waypoint
+  elevations, then averaged into 80 m cells and smoothed. Walking speed falls with slope following Tobler's
+  hiking curve (an Earth rule) and cells steeper than the limit are avoided. The route is an orienteering search
+  (greedy insertion by value per extra minute, then 2-opt): rarer deposit types are worth more, a second site of
+  the same type adds less, and the whole EVA, including the walk back, stays within the budget minus a 10% reserve.
+  It covers Curiosity's area only, because elsewhere NASA's elevation data is too coarse for walking routes.
+- **Spectrum lab:** every spectrum is re-binned onto one 25 eV grid from 1 to 15 keV using its own energy
+  calibration, then compared by shape (cosine similarity of square-root counts, chosen over raw and log counts by
+  a hold-out test). "Counting time" thins the counts with real Poisson statistics to simulate a quick-look reading.
+  Element lines are labelled when they stand 5σ above the local continuum; argon comes from the Martian air.
 - **Targeting a rock:** the selected rock gets a ring and crosshair, its name sits beside it, other rocks fade,
   and other labels are hidden up close. Numbered match pins stand on stems pointing at their exact spot; matches
   recorded at the same spot share one pin. Esc clears the selection.

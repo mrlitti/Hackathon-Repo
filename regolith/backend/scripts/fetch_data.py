@@ -279,8 +279,26 @@ def fetch_mola(manifest: dict) -> None:
                                     "note": "8-bit grey: 0..255 = -8201..+21241 m", **s}
 
 
+GALE_DEM = "https://trek.nasa.gov/tiles/Mars/EQ/Gale_DEM_SMG_1m/1.0.0/default/default028mm"
+GALE_BBOX = (137.1224711, -4.9254743, 137.7298129, -4.2489631)      # lon W, lat S, lon E, lat N (Trek capabilities)
+GALE_Z = 12                                                          # 256-px tiles: ~10 m per pixel
+
+
+def fetch_gale_dem(manifest: dict) -> None:
+    print("\n[+] NASA Mars Trek - MRO HiRISE Gale Crater DEM (Gale_DEM_SMG_1m), zoom 12 (~10 m/px)")
+    d = RAW / "trek_gale_dem_z12"
+    span = 180 / 2 ** GALE_Z
+    x0, x1 = int((GALE_BBOX[0] + 180) // span), int((GALE_BBOX[2] + 180) // span)
+    y0, y1 = int((90 - GALE_BBOX[3]) // span), int((90 - GALE_BBOX[1]) // span)
+    jobs = [(f"{GALE_DEM}/{GALE_Z}/{y}/{x}.png", d / f"{y}_{x}.png") for y in range(y0, y1 + 1) for x in range(x0, x1 + 1)]
+    s = download_many(jobs, "Gale DEM", 6)
+    manifest["trek_gale_dem_z12"] = {"url": f"{GALE_DEM}/", "license": "NASA public data", "zoom": GALE_Z,
+                                     "tiles": [x0, y0, x1, y1], "bbox": GALE_BBOX,
+                                     "note": "8-bit grey; scale calibrated against Curiosity waypoint elevations", **s}
+
+
 STEPS = {"mer": fetch_mer, "tables": fetch_msl_tables, "csa": None, "rdr": None, "traverses": fetch_traverses,
-         "grs": fetch_grs, "mola": fetch_mola}
+         "grs": fetch_grs, "mola": fetch_mola, "gale_dem": fetch_gale_dem}
 
 
 def main() -> None:
@@ -310,6 +328,8 @@ def main() -> None:
         fetch_grs(manifest)
     if run("mola"):
         fetch_mola(manifest)
+    if run("gale_dem"):
+        fetch_gale_dem(manifest)
 
     manifest["_retrieved_utc"] = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
     manifest_path.write_text(json.dumps(manifest, indent=2))

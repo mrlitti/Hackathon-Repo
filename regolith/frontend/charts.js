@@ -177,3 +177,84 @@ export function spectrumChart(box, spec, color) {
   hit.addEventListener('pointerleave', () => { guide.setAttribute('opacity', 0); dot.setAttribute('opacity', 0); hideTip(); });
   box.append(svg);
 }
+
+/* Spectrum lab: full-width spectrum (log counts), optional overlay of the best library match scaled to the same
+   total counts, and labels for the element lines that stand clearly above the continuum. */
+export function labChart(box, { energy, counts, overlay, overlayLabel, peaks, color, overlayColor }) {
+  box.replaceChildren();
+  const W = Math.max(320, box.clientWidth || 700), H = 300, m = { l: 52, r: 12, t: 46, b: 30 };
+  const xmin = energy[0], xmax = energy[energy.length - 1];
+  const scale = overlay ? counts.reduce((a, b) => a + b, 0) / Math.max(1, overlay.reduce((a, b) => a + b, 0)) : 1;
+  const ov = overlay ? overlay.map((c) => c * scale) : null;
+  const ymax = Math.max(1, Math.ceil(Math.log10(Math.max(...counts, ...(ov || [0])) + 1)));
+  const pw = W - m.l - m.r, ph = H - m.t - m.b;
+  const x = (e) => m.l + ((e - xmin) / (xmax - xmin)) * pw;
+  const y = (c) => m.t + (1 - Math.log10(Math.max(c, 0) + 1) / ymax) * ph;
+  const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'APXS X-ray spectrum: counts by energy, log scale, with detected element lines' });
+  for (let p = 0; p <= ymax; p++) {
+    svgEl('line', { x1: m.l, x2: W - m.r, y1: y(10 ** p - 1), y2: y(10 ** p - 1), stroke: p === 0 ? token('--axis') : token('--grid'), 'stroke-width': 1 }, svg);
+    svgText(svg, m.l - 6, y(10 ** p - 1) + 3, countLabel(p), 'end');
+  }
+  for (let k = 2; k <= xmax; k += 2) svgText(svg, x(k), H - 10, `${k} keV`);
+  const rowEnd = [-1e9, -1e9, -1e9];
+  (peaks || []).filter((p) => p.detected).forEach((p) => {
+    const px = x(p.kev), wHalf = p.el.length * 3.6 + 3;
+    svgEl('line', { x1: px, x2: px, y1: m.t - 2, y2: H - m.b, stroke: token('--axis'), 'stroke-width': 1, 'stroke-dasharray': p.air ? '3 3' : null }, svg);
+    const r = rowEnd.findIndex((end) => px - wHalf >= end + 3);
+    if (r < 0) return;
+    rowEnd[r] = px + wHalf;
+    const t = svgText(svg, px, m.t - 8 - r * 12, p.el);
+    if (p.air) t.setAttribute('font-style', 'italic');
+  });
+  const path = (arr) => arr.map((c, i) => `${i ? 'L' : 'M'}${x(energy[i]).toFixed(1)},${y(c).toFixed(1)}`).join('');
+  if (ov) svgEl('path', { d: path(ov), fill: 'none', stroke: overlayColor, 'stroke-width': 2, 'stroke-linejoin': 'round', opacity: 0.9 }, svg);
+  const line = path(counts), base = y(0).toFixed(1);
+  svgEl('path', { d: `${line}L${x(xmax).toFixed(1)},${base}L${x(xmin).toFixed(1)},${base}Z`, fill: color, opacity: 0.1 }, svg);
+  svgEl('path', { d: line, fill: 'none', stroke: color, 'stroke-width': 2, 'stroke-linejoin': 'round' }, svg);
+  const guide = svgEl('line', { y1: m.t, y2: H - m.b, stroke: token('--text-2'), 'stroke-width': 1, opacity: 0 }, svg);
+  const hit = svgEl('rect', { x: m.l, y: 0, width: pw, height: H, fill: 'transparent' }, svg);
+  hit.addEventListener('pointermove', (ev) => {
+    const r = svg.getBoundingClientRect();
+    const e = xmin + (((ev.clientX - r.left) * (W / r.width) - m.l) / pw) * (xmax - xmin);
+    const i = Math.max(0, Math.min(energy.length - 1, Math.round((e - xmin) / (energy[1] - energy[0]))));
+    guide.setAttribute('x1', x(energy[i])); guide.setAttribute('x2', x(energy[i])); guide.setAttribute('opacity', 0.45);
+    const near = (peaks || []).filter((p) => Math.abs(p.kev - energy[i]) < 0.09);
+    showTip((t) => {
+      tipRow(t, { color, value: `${Math.round(counts[i]).toLocaleString()} counts`, label: `this spectrum, ${energy[i].toFixed(2)} keV` });
+      if (ov) tipRow(t, { color: overlayColor, value: `${Math.round(ov[i]).toLocaleString()}`, label: overlayLabel });
+      near.forEach((p) => { const d = document.createElement('div'); d.className = 'dim';
+        d.textContent = `${p.el} Kα ${p.kev.toFixed(2)} keV${p.air ? ' (argon in the Martian air)' : ''} · ${p.detected ? `detected, ${p.sigma}σ` : 'not clearly detected'}`; t.append(d); });
+    }, ev.clientX, ev.clientY);
+  });
+  hit.addEventListener('pointerleave', () => { guide.setAttribute('opacity', 0); hideTip(); });
+  box.append(svg);
+}
+
+/* EVA elevation profile: elevation (m) against distance walked (km), stops marked. */
+export function profileChart(box, { path, stops, color }) {
+  box.replaceChildren();
+  const W = Math.max(280, box.clientWidth || 380), H = 150, m = { l: 48, r: 10, t: 14, b: 26 };
+  const d = path.map((p) => p[3] / 1000), e = path.map((p) => p[2]);
+  const lo = Math.floor(Math.min(...e) / 10) * 10, hi = Math.ceil(Math.max(...e) / 10) * 10 || lo + 10;
+  const span = Math.max(20, hi - lo), dmax = Math.max(0.05, d[d.length - 1]);
+  const pw = W - m.l - m.r, ph = H - m.t - m.b;
+  const x = (v) => m.l + (v / dmax) * pw, y = (v) => m.t + (1 - (v - lo) / span) * ph;
+  const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Elevation along the planned route' });
+  for (let k = 0; k <= 2; k++) {
+    const v = lo + (span * k) / 2;
+    svgEl('line', { x1: m.l, x2: W - m.r, y1: y(v), y2: y(v), stroke: k === 0 ? token('--axis') : token('--grid'), 'stroke-width': 1 }, svg);
+    svgText(svg, m.l - 6, y(v) + 3, `${Math.round(v).toLocaleString()} m`, 'end');
+  }
+  const ticks = dmax > 4 ? 1 : dmax > 1.5 ? 0.5 : 0.25;
+  for (let k = 0; k <= dmax + 1e-9; k += ticks) svgText(svg, x(k), H - 8, `${+k.toFixed(2)} km`);
+  const line = d.map((v, i) => `${i ? 'L' : 'M'}${x(v).toFixed(1)},${y(e[i]).toFixed(1)}`).join('');
+  svgEl('path', { d: `${line}L${x(dmax).toFixed(1)},${y(lo).toFixed(1)}L${x(0).toFixed(1)},${y(lo).toFixed(1)}Z`, fill: color, opacity: 0.12 }, svg);
+  svgEl('path', { d: line, fill: 'none', stroke: color, 'stroke-width': 2, 'stroke-linejoin': 'round' }, svg);
+  (stops || []).forEach((s) => {
+    const i = s.pathIndex;
+    if (i == null) return;
+    svgEl('circle', { cx: x(d[i]), cy: y(e[i]), r: 4.5, fill: color, stroke: token('--surface'), 'stroke-width': 2 }, svg);
+    svgText(svg, x(d[i]), y(e[i]) - 8, s.letter);
+  });
+  box.append(svg);
+}

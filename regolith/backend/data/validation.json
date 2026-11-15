@@ -55,5 +55,34 @@
     "n": 1474
    }
   ]
+ },
+ "spectra": {
+  "n": 150,
+  "seed": 20261115,
+  "quarter_counts_found_pct": 99.3,
+  "other_sol_same_type_pct": 82.0
+ },
+ "terrain": {
+  "product": "Gale_DEM_SMG_1m (NASA Mars Trek, MRO HiRISE Gale Crater DEM)",
+  "zoom": 12,
+  "bbox": [
+   137.1224711,
+   -4.9254743,
+   137.7298129,
+   -4.2489631
+  ],
+  "scale_m_per_grey": 18.5935,
+  "offset_m": -4600.11,
+  "n_waypoints": 1768,
+  "residual_sd_m": 6.0,
+  "median_abs_m": 4.6,
+  "max_abs_m": 17,
+  "grey_step_m": 18.6,
+  "curiosity_route": {
+   "samples": 695,
+   "median_slope_deg": 5.7,
+   "under_15_pct": 100.0,
+   "under_20_pct": 100.0
+  }
  }
 }

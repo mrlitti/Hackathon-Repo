@@ -32,6 +32,7 @@ from rockmatch.elements import grs_value  # noqa: E402
 from rockmatch.prospects import build as build_prospects  # noqa: E402
 from rockmatch.terrain import cell_means, load_dem  # noqa: E402
 from rockmatch.validate import run as run_validation  # noqa: E402
+from build_tools_extra import build_gale_terrain, build_spectrum_library, spectrum_tests  # noqa: E402
 
 RAW = BACKEND / "data" / "raw"
 OUT = BACKEND / "data"
@@ -598,7 +599,15 @@ def main() -> None:
                 "centimetres of the surface (Boynton et al. 2007). Errors are 1 sigma: NASA's SIGMA WITH CFS (which "
                 "includes correction-factor errors) or SIGMA where no correction factors apply (K, Th).",
         "maps": grs}, separators=(",", ":")))
+    gale = build_gale_terrain(RAW, OUT, rocks, msl_path, report)
+    spec_lib = build_spectrum_library(RAW, OUT, rocks, refs, report)
     validation = run_validation(rocks)
+    validation["spectra"] = spectrum_tests(spec_lib)
+    if gale:
+        validation["terrain"] = gale
+    s_ = validation["spectra"]
+    report.append(f"Spectrum hold-out: quarter-count re-measurement found {s_['quarter_counts_found_pct']}%, "
+                  f"other-sol nearest spectrum same type {s_['other_sol_same_type_pct']}% ({s_['n']} spectra)")
     (OUT / "validation.json").write_text(json.dumps(validation, indent=1))
     m, nb = validation["matching"], validation["nearby"]
     report.append(f"Hold-out tests: re-measured rock found first {m['remeasure_top1_pct']}% (top five {m['remeasure_top5_pct']}%), "
@@ -633,7 +642,7 @@ def main() -> None:
             r = rs[0]
             print(f"  {rover:<11} sol {r['sol']:>4} at {r['lat']:.4f},{r['lon']:.4f}  ~{label} ({lat},{lon}): "
                   f"{fast_distance_m(r['lat'], r['lon'], lat, lon) / 1000:.1f} km apart")
-    for f in ("apxs_rocks.json", "deposits.json", "traverses.json", "earth_refs.json", "grs_maps.json", "prospects.json", "validation.json"):
+    for f in ("apxs_rocks.json", "deposits.json", "traverses.json", "earth_refs.json", "grs_maps.json", "prospects.json", "validation.json", "spectra_lib.json"):
         print(f"wrote {OUT / f} ({(OUT / f).stat().st_size / 1e6:.2f} MB)")
 
 

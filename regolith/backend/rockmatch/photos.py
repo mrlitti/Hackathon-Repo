@@ -17,8 +17,8 @@ from .net import dir_listing, http_json
 MSL_API = "https://mars.nasa.gov/api/v1/raw_image_items/"
 MSL_PAGE = "https://science.nasa.gov/mission/msl-curiosity/"
 MER_BROWSE = {
-    "Opportunity": "https://pds-imaging.jpl.nasa.gov/data/mer/opportunity/mer1mo_0xxx/browse",
-    "Spirit": "https://pds-imaging.jpl.nasa.gov/data/mer/spirit/mer2mo_0xxx/browse",
+    "Opportunity": "https://planetarydata.jpl.nasa.gov/img/data/mer/opportunity/mer1mo_0xxx/browse",
+    "Spirit": "https://planetarydata.jpl.nasa.gov/img/data/mer/spirit/mer2mo_0xxx/browse",
 }
 CREDITS = {"Curiosity": "NASA/JPL-Caltech/MSSS (MAHLI)", "Spirit": "NASA/JPL/Cornell/USGS (Microscopic Imager)",
            "Opportunity": "NASA/JPL/Cornell/USGS (Microscopic Imager)"}

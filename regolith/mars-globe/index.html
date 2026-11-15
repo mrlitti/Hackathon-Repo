@@ -81,6 +81,9 @@
   #map-key { display:none; top:68px; left:12px; padding:6px 10px; max-width:260px; font-size:11px; color:#c3c2b7; flex-direction:column; gap:3px; }
   #map-key span { display:flex; align-items:center; }
   body.embed #map-key { display:flex; }
+  #controls:not(.collapsed) ~ #map-key { display:none !important; }   /* the open panel shows the full legend */
+  body.embed #map-key { top:60px; width:260px; max-width:none; border-top-left-radius:0; border-top-right-radius:0; border-top:0; }
+  body.embed #controls.collapsed { border-bottom-left-radius:0; border-bottom-right-radius:0; }
   body.embed.elem-on #map-key, body.embed:not(.apxs-on) #map-key { display:none; }
   body.picking canvas { cursor:crosshair; }
   #elem-panel { display:none; margin-top:auto; }
@@ -108,6 +111,10 @@
   .pin-stem { width:2px; height:18px; background:#fff; box-shadow:0 0 0 1px rgba(0,0,0,.7); }
   .pin-head.multi { width:auto; min-width:22px; padding:0 7px; border-radius:11px; }
   .pin.sel .pin-head { background:#ff6a3d; color:#000; }
+  .rpin .pin-head { background:#e8b72f; color:#111; }
+  .rpin .pin-stem { background:#e8b72f; }
+  .rpin .pin-head { width:auto; min-width:22px; padding:0 6px; border-radius:11px; }
+  .rpin.start .pin-head { background:#111; color:#e8b72f; box-shadow:0 0 0 2px #e8b72f, 0 2px 8px rgba(0,0,0,.6); }
   .pin.sel .pin-stem { background:#ff6a3d; height:38px; }   /* clears the target ring */
   /* target reticle centred on the selected rock (animation on the child: CSS2D owns the wrapper's transform) */
   .target { pointer-events:none; }
@@ -139,6 +146,11 @@
          text-transform:uppercase; font-weight:600; vertical-align:1px; }
   .wbig { font-size:17px; font-weight:600; color:#f0efec; font-variant-numeric:tabular-nums; }
   .soilv { display:inline-block; margin-right:8px; font-variant-numeric:tabular-nums; }
+  .kvs { display:grid; gap:4px; margin:8px 0; }
+  .kv { display:flex; justify-content:space-between; gap:10px; font-size:12px; }
+  .kv span { color:var(--dim); }
+  .kv b { color:#f0efec; font-weight:600; text-align:right; font-variant-numeric:tabular-nums; }
+  .zsrc { font-size:11.5px; margin-top:8px; }
   .ok-mark { display:inline-block; font-size:10px; font-weight:700; letter-spacing:.4px; text-transform:uppercase; color:#0ca30c;
              border:1px solid #0ca30c; border-radius:4px; padding:0 4px; margin-right:2px; vertical-align:1px; }
   .ic { width:15px; height:15px; flex:none; vertical-align:-3px; margin-right:6px; }
@@ -229,7 +241,7 @@
         <input id="elem-pct" type="range" min="50" max="99" step="1" value="75">
         <div class="note" id="elem-pct-val"></div>
       </div>
-      <label style="margin-top:8px"><input type="checkbox" id="show-prospects"> Prospect zones (judged from orbit)</label>
+      <label style="margin-top:8px"><input type="checkbox" id="show-prospects"> Prospect zones</label>
       <div id="legend"></div>
       <label><input type="checkbox" id="show-apxs" checked> Show measurements</label>
       <label><input type="checkbox" id="show-trav" checked> Rover traverses</label>
@@ -306,7 +318,7 @@ const LAYERS = {
                note: 'Viking color, sharpened with the CTX mosaic (10 m/px) everywhere and HiRISE (0.3–0.6 m/px) at the rover sites.' },
   viking:    { body: 'Mars', id: 'Mars_Viking_MDIM21_ClrMosaic_global_232m', ext: 'jpg', max: 7,
                note: 'Viking Orbiter color mosaic (USGS MDIM 2.1).' },
-  themis:    { body: 'Mars', id: 'THEMIS_DayIR_ControlledMosaics_100m_v2_oct2018', ext: 'png', max: 9,
+  themis:    { body: 'Mars', id: 'THEMIS_DayIR_ControlledMosaics_100m_v2_oct2018', ext: 'png', max: 9, latLimit: 67.5,
                note: 'Mars Odyssey THEMIS daytime infrared, 100 m. Bright = warm (rock), dark = cool (dust). Covers ~60°S–60°N.' },
   mola:      { body: 'Mars', id: 'Mars_MGS_MOLA_ClrShade_merge_global_463m', ext: 'jpg', max: 7,
                note: 'MOLA laser altimeter elevation. Blue = low, white = high.' },
@@ -983,7 +995,9 @@ class Node {
     const dz = Math.min(this.z, DEM.max), k = this.z - dz;
     this.dem = getDem(dz, this.x >> k, this.y >> k);
     this.dem.refs++;
-    const imgP = state.layer.composite ? compositeTile(this)
+    const outside = state.layer.latLimit && this.z >= 3 && Math.min(Math.abs(this.latN), Math.abs(this.latS)) >= state.layer.latLimit;
+    const imgP = outside ? Promise.resolve(null)                // NASA has no tiles here (THEMIS covers ~65 S-65 N)
+      : state.layer.composite ? compositeTile(this)
       : requestImage(tileURL(state.layer, this.z, this.x, this.y), () => !this.dead, this.z);
     const [img] = await Promise.all([imgP, this.dem.promise]);
     if (this.dead) return;
@@ -1609,6 +1623,7 @@ function drapeApxs() {
   if (apxs.target) apxs.target.position.copy(rockPos(apxs.target.userData.r));
   for (const r of [...apxs.regions, apxs.hlRegion, ...elem.spots]) if (r) setRegion(r, r.lat, r.lon, r.km);
   for (const l of elem.labels) l.obj.position.copy(toVec(l.lat, l.lon, groundR(l.lat, l.lon) + LIFT_MIN));
+  drapeRoute();
 }
 
 const groupOf = (cls) => (apxs.view ? apxs.view.groups.findIndex((g) => g.classes.includes(cls)) : -1);
@@ -1810,7 +1825,7 @@ function renderElementPanel(d) {
   const p = $('elem-body');
   p.innerHTML = '';
   const add = (html) => p.insertAdjacentHTML('beforeend', html);
-  add(`<h3>${esc(d.label)} (${esc(d.key)}) — top ${100 - d.percentile}%</h3>`);
+  add(`<h3>${esc(d.label)} (${esc(d.key)}) · top ${100 - d.percentile}%</h3>`);
   if (d.grs) {
     const g = d.grs;
     add(`<div class="src"><b>Orbit · Mars Odyssey GRS</b> (${esc(d.key)}, ${esc(g.unit)})
@@ -2116,6 +2131,7 @@ function updateApxs() {
   if (elem.overlay) elem.overlay.material.opacity = clamp((alt - 60) / 500, 0.15, 1);
   const near = alt < 1500;
   for (const p of apxs.pins) p.obj.visible = near && p.obj.position.clone().normalize().dot(camN) > cosH;
+  for (const p of route.pins) p.obj.visible = near && p.obj.position.clone().normalize().dot(camN) > cosH;
   if (apxs.selLabel) apxs.selLabel.visible = alt < 800 && apxs.selLabel.position.clone().normalize().dot(camN) > cosH;
   if (apxs.target) apxs.target.visible = alt < 3000 && apxs.target.position.clone().normalize().dot(camN) > cosH;
   for (const l of prosp.labels) l.obj.visible = alt > 150 && prosp.show.has(l.kind) && l.dir.dot(camN) > cosH + 0.15 * (1 - cosH);
@@ -2213,16 +2229,15 @@ function buildProspects() {
   prosp.labels.sort((a, b) => b.area - a.area);             // bigger zones win label space, whatever their kind
 }
 /* Predictions (estimates): soil an APXS would likely read, and water you could extract, from orbit */
-function predictedHtml(soil, water, unvisited) {
+function predictedHtml(soil, water) {
   const err = prosp.check?.error_pct || {};
-  let html = '';
-  if (water) html += `<p><b>Water you could extract</b> <span class="est">estimate</span><br>
-    <span class="wbig">about ${water.practical_l_t ?? water.upper_l_t} L</span> per tonne of soil${water.practical_l_t != null ? ` <span class="dim">(up to ${water.upper_l_t} L if all released)</span>` : ''}.
-    <span class="dim">From ${(+water.h2o_wt).toFixed(1)} wt% water-equivalent hydrogen (1 wt% = 10 L per tonne); practical share as released when Curiosity's SAM heated Gale soil (2 wt% of ${(+water.gale_h2o_wt || 0).toFixed(1)}).</span></p>`;
-  if (soil && Object.keys(soil).length) html += `<p><b>Soil an APXS would likely read${unvisited ? ' (no rover has been here)' : ''}</b> <span class="est">from orbit</span><br>
-    ${Object.entries(soil).map(([ox, v]) => `<span class="soilv"><b>${ox}</b> ${v} wt%${err[ox] != null ? ` <span class="dim">±${err[ox]}%</span>` : ''}</span>`).join(' ')}
-    <br><span class="dim">Odyssey Fe, Si, K, Cl as oxides; ± is the largest miss against the rovers' own soils at the three landing sites.</span></p>`;
-  return html;
+  const rows = [];
+  if (water) rows.push(`<div class="kv"><span>Water in the soil</span><b>~${water.practical_l_t ?? water.upper_l_t} L / tonne</b></div>`);
+  if (soil && soil.FeO != null) rows.push(`<div class="kv"><span>Soil from orbit</span><b>FeO ${soil.FeO} · SiO2 ${soil.SiO2} wt%</b></div>`);
+  if (!rows.length) return '';
+  const tip = [water ? `Water: ${(+water.h2o_wt).toFixed(1)} wt% water-equivalent hydrogen; the estimate assumes the share Curiosity's SAM released when heating Gale soil.` : '',
+    soil ? `Soil: Odyssey Fe and Si as oxides; largest miss against rover soils FeO ±${err.FeO ?? '?'}%, SiO2 ±${err.SiO2 ?? '?'}%.` : ''].join(' ');
+  return `<div class="kvs" title="${esc(tip)}">${rows.join('')}</div>`;
 }
 async function showForecast(lat, lon) {
   let f;
@@ -2230,46 +2245,40 @@ async function showForecast(lat, lon) {
   prosp.check = f.ground?.check || prosp.check;
   prosp.sel = null;
   renderZonePanel();
-  const near = f.nearby
-    ? `<p><b>If you sample a rock within 1 km</b> <span class="est">estimate</span><br>${f.nearby.odds.slice(0, 4).map((o) => `${esc(o.label)} ${o.pct}%`).join(' · ')}
-       <br><span class="dim">From ${f.nearby.n} rover measurements nearby, closer ones counting more.${f.nearby.skill ? ` In a hold-out test the top prediction was right ${Math.round(f.nearby.skill.top1_pct)}% of the time (always guessing basalt: ${Math.round(f.nearby.skill.baseline_pct)}%).` : ''} ${esc(f.nearby.caveat)}</span></p>`
-    : '<p class="dim">No rover measurements within 1 km, so no local rock prediction here.</p>';
+  const near = f.nearby ? `<div class="kv"><span>Likely rock within 1 km</span><b>${esc(f.nearby.odds[0].label)} ${f.nearby.odds[0].pct}%</b></div>` : '';
   $('zone-body').insertAdjacentHTML('beforeend', `<div class="src zone-detail">
-    <div class="zt">Forecast for ${fmtLL(lat, lon)}</div>
-    ${f.zones.length ? `<p>Inside: ${f.zones.map((z) => esc(z.label)).join(', ')} zone</p>` : '<p class="dim">Not inside a prospect zone.</p>'}
-    ${predictedHtml(f.ground?.predicted, f.water, !f.nearby)}${near}
-    <p class="dim">Click anywhere on the planet for a forecast.</p></div>`);
+    <div class="zt">${fmtLL(lat, lon)}</div>
+    <p class="dim">${f.zones.length ? `In ${f.zones.map((z) => esc(z.label.toLowerCase())).join(' and ')} zone` : 'Outside the prospect zones'}</p>
+    ${predictedHtml(f.ground?.predicted, f.water)}${near ? `<div class="kvs">${near}</div>` : ''}
+    ${f.masked && !f.ground ? '<p class="dim">No orbital soil data this close to the pole.</p>' : ''}</div>`);
 }
 function renderZonePanel() {
   const d = prosp.data, p = $('zone-body');
   const links = d.links || {};
-  let html = `<h3>Prospect zones · judged from orbit</h3>
-    <div class="src" style="border:0;margin:0;padding:0">Where these deposits are <i>likely</i>, using only NASA orbital data<span class="zlong">:
-    Mars Odyssey GRS element maps and MOLA elevation, on NASA's 5° cells (~300 km)</span>. Click a zone label for the reasons,
-    or anywhere on the planet for a forecast.</div>`;
+  let html = `<h3>Prospect zones</h3>
+    <div class="src" style="border:0;margin:0;padding:0">Likely ground for each resource, from NASA orbital data. Click a zone or any spot.</div>`;
   html += '<div class="src">' + Object.entries(d.kinds).map(([kind, k]) =>
     `<label class="zkind" title="${esc(k.rule)}"><input type="checkbox" data-kind="${kind}"${prosp.show.has(kind) ? ' checked' : ''}>
       <span class="zswatch" style="--c:${ZONE_COLORS[kind]}"></span>
-      <span><b>${esc(k.label)}</b> <span class="dim">· ${k.zones.length} zone${k.zones.length === 1 ? '' : 's'}</span><span class="zrule"><br><span class="dim">${esc(k.rule)}</span></span></span></label>`).join('') + '</div>';
+      <span><b>${esc(k.label)}</b> <span class="dim">${k.zones.length}</span></span></label>`).join('') + '</div>';
   if (prosp.sel) {
-    const k = d.kinds[prosp.sel.kind], z = k.zones[prosp.sel.zi], el = { Cl: 'chlorine', H2O: 'water-equivalent hydrogen', K: 'potassium' }[k.grs] || k.grs;
+    const k = d.kinds[prosp.sel.kind], z = k.zones[prosp.sel.zi], el = { Cl: 'Cl', H2O: 'H2O-eq.', K: 'K' }[k.grs] || k.grs;
     const places = placesIn(z.cells);
     const ground = z.ground.length
-      ? z.ground.map((g) => `<p><span class="ok-mark">Confirmed</span> <b>${esc(g.site)}</b> (${esc(g.rover)}): ${fmtN(g.n_related)} of ${fmtN(g.n)} rover readings here are
-          ${esc(g.related.join(', ') || 'related deposit types')}${g.n_related ? '' : ' (none of the related types)'}.</p>`).join('')
-      : '<p>No rover has measured rocks inside this zone, so it is an untested prediction.</p>';
+      ? z.ground.map((g) => `<div class="kv"><span>${esc(g.site)}</span><b>${fmtN(g.n_related)} of ${fmtN(g.n)} rocks match</b></div>`).join('')
+      : '<div class="kv"><span>Rover data</span><b>Not yet visited</b></div>';
     html += `<div class="src zone-detail" style="--c:${ZONE_COLORS[prosp.sel.kind]}">
-      <div class="zt"><span class="zswatch" style="--c:${ZONE_COLORS[prosp.sel.kind]};display:inline-block;vertical-align:-2px;margin-right:6px"></span>${esc(k.short)} zone</div>
-      ${places.length ? `<p class="dim">Includes ${esc(places.join(', '))}</p>` : ''}
-      <p><b>Why here:</b> ${esc(k.why)}</p>
-      <p><b>The numbers:</b> mean ${el} ${z.mean} ${esc(k.unit)} (top-15% cut-off ${k.threshold} ${esc(k.unit)}; highest cell ${z.max})${k.elev_median_m != null
-        ? `; mean elevation ${fmtN(z.elev_m)} m vs the planet's median ${fmtN(k.elev_median_m)} m` : ''}. ${z.n_cells} cells ≈ ${(z.area_km2 / 1e6).toFixed(1)} million km².</p>
-      ${predictedHtml(z.predicted_soil, z.water, !z.ground.length)}
-      <p><b>Ground truth:</b></p>${ground}
-      <p class="dim">Each cell is NASA's ~600 km moving average of roughly the top few tens of cm, so a zone marks where to look, not a confirmed deposit.</p>
-      <p>${links[prosp.sel.kind] ? `<a href="${esc(links[prosp.sel.kind].url)}" target="_blank" rel="noopener">${esc(links[prosp.sel.kind].title)}</a><br>` : ''}
-      <a href="https://pds-geosciences.wustl.edu/ody/ody-m-grs-5-elements-v1/" target="_blank" rel="noopener">NASA PDS: Odyssey GRS element maps</a><br>
-      <a href="https://trek.nasa.gov/mars/" target="_blank" rel="noopener">NASA Mars Trek: MOLA elevation</a></p></div>`;
+      <div class="zt"><span class="zswatch" style="--c:${ZONE_COLORS[prosp.sel.kind]};display:inline-block;vertical-align:-2px;margin-right:6px"></span>${esc(k.short)}</div>
+      ${places.length ? `<p class="dim">${esc(places.slice(0, 4).join(', '))}</p>` : ''}
+      <p>${esc(k.why)}</p>
+      <div class="kvs" title="${esc(k.rule)}. Values are NASA's ~600 km averages of the top few tens of cm: a zone marks where to look, not a confirmed deposit.">
+        <div class="kv"><span>Mean ${el}</span><b>${z.mean} ${esc(k.unit)}</b></div>
+        <div class="kv"><span>Area</span><b>${(z.area_km2 / 1e6).toFixed(1)} million km²</b></div>
+        ${k.elev_median_m != null ? `<div class="kv"><span>Mean elevation</span><b>${fmtN(z.elev_m)} m</b></div>` : ''}
+        ${ground}
+      </div>
+      ${predictedHtml(z.predicted_soil, z.water)}
+      <p class="zsrc">${links[prosp.sel.kind] ? `<a href="${esc(links[prosp.sel.kind].url)}" target="_blank" rel="noopener">${esc(links[prosp.sel.kind].title.replace(/^(NASA|JPL): /, ''))}</a> · ` : ''}<a href="https://pds-geosciences.wustl.edu/ody/ody-m-grs-5-elements-v1/" target="_blank" rel="noopener">Odyssey GRS data</a></p></div>`;
   }
   p.innerHTML = html;
   p.querySelectorAll('input[data-kind]').forEach((cb) => (cb.onchange = () => {
@@ -2281,6 +2290,71 @@ function renderZonePanel() {
 }
 $('show-prospects').onchange = (e) => setProspects(e.target.checked);
 $('zone-close').onclick = () => setProspects(false);
+
+/* =====================================================================
+   EVA route from Regolith's planner: a draped line (dotted so it reads at any zoom), lettered stop pins
+   ===================================================================== */
+const route = { line: null, dots: null, pins: [], pts: null };
+const ROUTE_COLOR = 0xe8b72f;
+function routeGeometry(pts) {
+  const arr = new Float32Array(pts.length * 3), v = new THREE.Vector3();
+  pts.forEach(([la, lo], i) => { toVec(la, lo, groundR(la, lo), v); arr[i * 3] = v.x; arr[i * 3 + 1] = v.y; arr[i * 3 + 2] = v.z; });
+  return arr;
+}
+function setRoute(m) {
+  for (const o of [route.line, route.dots]) if (o) { scene.remove(o); o.geometry.dispose(); }
+  route.pins.forEach((p) => scene.remove(p.obj));
+  Object.assign(route, { line: null, dots: null, pins: [], pts: null });
+  if (m.clear || !m.line?.length) return;
+  // densify to ~15 m so the line follows the terrain between the planner's cells
+  const pts = [];
+  for (let i = 0; i < m.line.length - 1; i++) {
+    const [a1, b1] = m.line[i], [a2, b2] = m.line[i + 1];
+    const d = Math.hypot(a2 - a1, (b2 - b1) * Math.cos(a1 * D2R)) * D2R * R_KM * 1000;
+    const n = Math.max(1, Math.ceil(d / 15));
+    for (let k = 0; k < n; k++) pts.push([a1 + ((a2 - a1) * k) / n, b1 + ((b2 - b1) * k) / n]);
+  }
+  pts.push(m.line[m.line.length - 1]);
+  route.pts = pts;
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(routeGeometry(pts), 3));
+  route.line = new THREE.Line(geo, liftMaterial(new THREE.LineBasicMaterial({ color: ROUTE_COLOR })));
+  route.dots = new THREE.Points(geo.clone(), liftMaterial(new THREE.PointsMaterial({ color: ROUTE_COLOR, size: 3.5, sizeAttenuation: false })));
+  for (const o of [route.line, route.dots]) { o.frustumCulled = false; o.renderOrder = 11; scene.add(o); }
+  const pin = (lat, lon, text, sub, start) => {
+    const el = document.createElement('div');
+    el.className = `pin rpin${start ? ' start' : ''}`;
+    el.innerHTML = `<span class="pin-head">${esc(text)}</span><span class="pin-stem"></span>`;
+    if (sub) el.title = sub;
+    const obj = new CSS2DObject(el);
+    obj.center.set(0.5, 1);
+    obj.position.copy(toVec(lat, lon, groundR(lat, lon) + LIFT_MIN));
+    scene.add(obj);
+    route.pins.push({ obj, lat, lon });
+  };
+  pin(m.start.lat, m.start.lon, 'S', 'Start and finish', true);
+  // stops within ~80 m of each other share one pin ("A-C"), so close stops never stack
+  const groups = [];
+  (m.stops || []).forEach((st) => {
+    const g = groups.find((x) => Math.hypot(x.lat - st.lat, (x.lon - st.lon) * Math.cos(st.lat * D2R)) * D2R * R_KM < 0.08);
+    if (g) g.items.push(st); else groups.push({ lat: st.lat, lon: st.lon, items: [st] });
+  });
+  groups.forEach((g) => {
+    const L = g.items.map((x) => x.letter);
+    pin(g.lat, g.lon, L.length > 2 ? `${L[0]}–${L[L.length - 1]}` : L.join(','), g.items.map((x) => `${x.letter}: ${x.label}, arrive ${x.eta}`).join('\n'));
+  });
+  // fit the whole route in view
+  const lats = m.line.map((q) => q[0]), lons = m.line.map((q) => q[1]);
+  const clat = (Math.min(...lats) + Math.max(...lats)) / 2, clon = (Math.min(...lons) + Math.max(...lons)) / 2;
+  const km = Math.max((Math.max(...lats) - Math.min(...lats)), (Math.max(...lons) - Math.min(...lons)) * Math.cos(clat * D2R)) * D2R * R_KM;
+  flyTo(clat, clon, groundR(clat, clon) + Math.max(km * 1.6, 2.5) / R_KM);
+  wake();
+}
+function drapeRoute() {
+  if (!route.pts) return;
+  for (const o of [route.line, route.dots]) { o.geometry.attributes.position.array.set(routeGeometry(route.pts)); o.geometry.attributes.position.needsUpdate = true; }
+  route.pins.forEach((p) => p.obj.position.copy(toVec(p.lat, p.lon, groundR(p.lat, p.lon) + LIFT_MIN)));
+}
 
 /* Label declutter: labels claim their screen box in priority order, and one that would overlap a box
    already claimed is hidden for this frame. Sizes are measured once (label text never changes). */
@@ -2310,6 +2384,7 @@ function declutterLabels() {
   block(apxs.target);                                         // the targeted rock, its name and the match pins
   block(apxs.selLabel);                                       // are never hidden
   apxs.pins.forEach((p) => block(p.obj));
+  route.pins.forEach((p) => block(p.obj));
   // focus: while a rock is targeted up close, only it, its label and the numbered matches are labelled
   const focus = apxs.selected && altitudeU() * R_KM < 400;
   const others = [...elem.labels.map((l) => l.obj), ...prosp.labels.map((l) => l.obj), ...apxs.badges.map((b) => b.obj),
@@ -2343,6 +2418,7 @@ window.addEventListener('message', (e) => {
   else if (m.type === 'rm:set-position') setYou(m.lat, m.lon);
   else if (m.type === 'rm:clear') { apxs.highlight.clear(); clearSelection(); setPins([]); showHighlightRegion(null); }
   else if (m.type === 'rm:prospects') setProspects(!!m.on, { notify: false });
+  else if (m.type === 'rm:route') setRoute(m);
   else if (m.type === 'rm:element') setElement(m.key || null, m.pct || elem.pct, { notify: false });
   else if (m.type === 'rm:visible') { paused = !m.on; wake(); }
   else if (m.type === 'rm:ping') post({ type: 'rm:ready', apxs: apxs.ready, count: apxs.rocks.length });
