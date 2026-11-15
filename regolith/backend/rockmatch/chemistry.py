@@ -151,15 +151,16 @@ def classify(chem: dict, sample_type: str | None = None) -> tuple[str, str]:
 
 
 # ---------------------------------------------------------------------------- map colour views
-# A map can only keep ~3 colours distinguishable when any two points may sit side by side, so
-# the map shows one "view" at a time: up to three coloured groups, everything else neutral grey.
-# Colours validated with the dataviz palette checker (dark mode, all pairs).
-SLOT_COLORS = ["#3987e5", "#d95926", "#199e70"]
+# The map shows one "view" at a time; everything outside the view's groups is neutral grey.
+# Slots 1-3 validate all-pairs (any two points side by side) in dark mode, so the detailed views use at
+# most three. The overview colours the five deposit families with slots 1-5 (validated adjacent: CVD
+# dE >= 8.4, normal-vision >= 19.3); it always ships with names (legend, hover, family labels) and a
+# per-family toggle, because slots 2 and 4 (orange, yellow) can be confused when they sit side by side.
+SLOT_COLORS = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181"]
 OTHER_COLOR = "#898781"
 NOTABLE_IDS = [c["id"] for c in DEPOSIT_CLASSES if c["notable"]]
 MAP_VIEWS = [
-    {"id": "unusual", "label": "Unusual vs typical", "groups": [
-        {"label": "Unusual chemistry (any deposit class)", "classes": NOTABLE_IDS}]},
+    {"id": "unusual", "label": "All deposits by family", "groups": []},   # filled in below
     {"id": "sulfates", "label": "Sulfate salts & veins", "groups": [
         {"label": "Calcium-sulfate veins", "classes": ["ca_sulfate"]},
         {"label": "Magnesium sulfates", "classes": ["mg_sulfate"]},
@@ -179,4 +180,7 @@ MAP_VIEWS = [
         {"label": "Alkali-rich igneous", "classes": ["alkali"]},
         {"label": "Olivine / Mg-rich", "classes": ["ultramafic"]}]},
 ]
+MAP_VIEWS[0]["groups"] = [{"label": v["label"], "classes": [c for g in v["groups"] for c in g["classes"]]}
+                          for v in MAP_VIEWS[1:]]
 CLASS_FAMILY = {cid: v["id"] for v in MAP_VIEWS[1:] for g in v["groups"] for cid in g["classes"]}
+assert sorted(CLASS_FAMILY) == sorted(NOTABLE_IDS), "every deposit class needs exactly one family"

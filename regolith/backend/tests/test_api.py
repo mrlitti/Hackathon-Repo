@@ -276,3 +276,109 @@ def test_element_validation(client):
     assert client.get("/api/elements/Xx").status_code == 404
     assert client.get("/api/elements/Cl", params={"pct": 30}).status_code == 422
     assert client.get("/api/elements/H2O").json()["apxs"] is None
+
+
+# ------------------------------------------------------------------ GRS accuracy (checked against NASA's tables/maps)
+
+def test_grs_longitude_is_east_positive(client):
+    # NASA's browse map: Arabia Terra (~22.5E, 7.5N) is high in H2O, south of Valles (~-62.5E, -37.5) is low
+    cells = {(c[0], c[1]): c[2] for c in client.get("/api/elements/H2O?pct=75").json()["grs"]["cells"]}
+    assert cells[(7.5, 22.5)] == 6.291 and cells[(-37.5, -62.5)] == 1.993
+
+
+def test_grs_errors_are_nasa_totals(client):
+    cl = {(c[0], c[1]): c[3] for c in client.get("/api/elements/Cl?pct=75").json()["grs"]["cells"]}
+    assert cl[(-2.5, 137.5)] == 0.054                      # SIGMA WITH CFS (SIGMA alone is 0.037)
+    th = {(c[0], c[1]): c[3] for c in client.get("/api/elements/Th?pct=75").json()["grs"]["cells"]}
+    assert th[(87.5, 177.5)] == 0.035                      # CFS not applicable for Th -> SIGMA
+
+
+def test_rover_sites_compare_orbit_and_ground(client):
+    d = client.get("/api/elements/Cl?pct=75").json()
+    sites = {s["rover"]: s for s in d["sites"]}
+    assert sites["Curiosity"]["grs"]["cell"] == [-2.5, 137.5] and sites["Curiosity"]["grs"]["value"] == 0.583
+    assert sites["Spirit"]["grs"]["cell"] == [-12.5, 177.5] and sites["Spirit"]["grs"]["value"] == 0.691
+    assert sites["Opportunity"]["grs"]["cell"] == [-2.5, -7.5] and sites["Opportunity"]["grs"]["value"] == 0.571
+    assert sites["Curiosity"]["apxs"]["n"] > 1000 and d["grs"]["data_edge"]["north"] == [40.0, 60.0]
+
+
+def test_percentile_is_nearest_rank():
+    from rockmatch.elements import percentile
+    assert percentile([1, 2, 3, 4], 50) == 2 and percentile([1, 2, 3, 4], 75) == 3 and percentile([1, 2, 3, 4], 76) == 4
+
+
+# ------------------------------------------------------------------ prospect zones (orbit-only rules)
+
+def test_prospect_zones_follow_their_rules(client):
+    d = client.get("/api/prospects").json()
+    assert set(d["kinds"]) == {"salt", "water", "potassium"}
+    for kind, k in d["kinds"].items():
+        grs = {(c[0], c[1]): c[2] for c in client.get(f"/api/elements/{k['grs']}?pct=75").json()["grs"]["cells"]}
+        for z in k["zones"]:
+            assert all(grs[(la, lo)] >= k["threshold"] for la, lo in z["cells"])
+        if kind == "salt":
+            assert all(z["elev_m"] < 0 for z in k["zones"])       # low ground (planet median is about -30 m)
+    assert d["links"]["salt"]["url"].startswith("https://www.jpl.nasa.gov/")
+
+
+def test_prospect_ground_truth(client):
+    k = client.get("/api/prospects").json()["kinds"]
+    salt = {g["rover"]: g for z in k["salt"]["zones"] for g in z["ground"]}
+    water = {g["rover"]: g for z in k["water"]["zones"] for g in z["ground"]}
+    assert salt["Curiosity"]["n_related"] > 50                   # Gale's halide-rich rocks sit in a salt zone
+    assert water["Opportunity"]["n_related"] > 100               # Meridiani's sulfate sandstones sit in a water zone
+
+
+def test_mola_decoding_matches_known_elevations():
+    from pathlib import Path
+    from rockmatch.terrain import elevation_at, load_dem
+    folder = Path(__file__).resolve().parents[1] / "data" / "raw" / "trek_mola_dem_z2"
+    if not folder.exists():
+        import pytest
+        pytest.skip("MOLA tiles not downloaded (fetch_data.py --only mola)")
+    g = load_dem(folder)
+    assert abs(elevation_at(g, -4.5895, 137.4417) - -4501) < 150      # Curiosity landing site
+    assert abs(elevation_at(g, -14.5684, 175.4726) - -1940) < 150     # Spirit landing site
+
+
+# ------------------------------------------------------------------ predictions (estimates beyond the data)
+
+def test_water_yield_maths():
+    from rockmatch.predict import water_yield
+    w = water_yield(5.0, 5.0)                                  # at Gale itself the practical share is SAM's 2 wt%
+    assert w["upper_l_t"] == 50 and w["practical_l_t"] == 20 and w["share"] == 0.4
+
+
+def test_minerals_follow_formulas():
+    from rockmatch.predict import minerals
+    gyp = minerals({"CaO": 32.57, "SO3": 46.51})               # pure gypsum (the other 20.9 wt% is water)
+    assert gyp["minerals"][0]["formula"] == "CaSO4" and abs(gyp["minerals"][0]["wt"] - 79.1) < 0.2
+    salt = minerals({"Na2O": 10.0, "Cl": 15.0})
+    assert salt["minerals"][0]["formula"] == "NaCl" and salt["unassigned"]   # more Cl than Na can hold
+    assert minerals({"SiO2": 45, "FeO": 18})["minerals"] == []
+
+
+def test_forecast_endpoint(client):
+    g = client.get("/api/forecast?lat=-4.72&lon=137.37").json()          # Gale
+    assert {z["kind"] for z in g["zones"]} >= {"salt"} and g["nearby"]["n"] > 50
+    assert g["water"]["practical_l_t"] < g["water"]["upper_l_t"] and g["nearby"]["skill"]["top1_pct"] > g["nearby"]["skill"]["baseline_pct"]
+    assert all(v <= 30 for v in g["ground"]["check"]["error_pct"].values())
+    far = client.get("/api/forecast?lat=30&lon=-100").json()             # no rover anywhere near
+    assert far["nearby"] is None and far["ground"]["predicted"]["FeO"] > 0
+
+
+def test_match_includes_predictions(client):
+    r = client.post("/api/match", json={"chemistry": {"SiO2": 16, "SO3": 34, "CaO": 23, "FeO": 12},
+                                        "lat": -4.72, "lon": 137.37}).json()
+    assert r["query"]["minerals"]["minerals"] and r["query"]["forecast"]["nearby"]
+
+
+def test_validation_and_sources(client):
+    v = client.get("/api/validation").json()
+    assert v["matching"]["remeasure_same_type_pct"] > 95 and v["matching"]["remeasure_top5_pct"] > 90
+    assert v["nearby"]["log_loss"] < v["nearby"]["log_loss_prior_only"]            # beats the planet-wide mix
+    for b in v["nearby"]["calibration"]:
+        assert abs(b["predicted_pct"] - b["observed_pct"]) < 5                     # well calibrated
+    s = client.get("/api/sources").json()["sources"]
+    assert {x["agency"] for x in s} == {"NASA", "CSA"}
+    assert all(x["url"].startswith("https://") for x in s)

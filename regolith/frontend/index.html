@@ -6,16 +6,19 @@
   <title>Regolith</title>
   <meta name="description" content="APXS field guide for Mars astronauts: match a rock against every APXS measurement by Curiosity, Spirit and Opportunity.">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='13' fill='%23c1440e'/%3E%3Ccircle cx='11' cy='12' r='3' fill='%23e86a3a'/%3E%3Ccircle cx='20' cy='20' r='4' fill='%23a3360a'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <header class="top">
     <div class="brand">
-      <span class="logo">REGOLITH</span>
-      <span class="tag">APXS field guide · NASA PDS + Canadian Space Agency data</span>
+      <svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M3.5 14.5c3-1.6 5.6-1.2 8 .2s5.5 1.6 9-.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="9" cy="8.5" r="1.4" fill="currentColor"/></svg>
+      <span class="logo">Regolith</span>
     </div>
     <div class="stats" id="stats"></div>
-    <div class="status" id="status"><i></i><span>connecting…</span></div>
+    <div class="status" id="status" hidden><i></i><span></span></div>
   </header>
 
   <main class="layout">
@@ -23,6 +26,7 @@
       <nav class="tabs" role="tablist" aria-label="Views">
         <button role="tab" id="tabbtn-map" aria-controls="tab-map" aria-selected="true" data-tab="map">Map</button>
         <button role="tab" id="tabbtn-deposits" aria-controls="tab-deposits" aria-selected="false" data-tab="deposits">Deposits</button>
+        <button role="tab" id="tabbtn-data" aria-controls="tab-data" aria-selected="false" data-tab="data">Data &amp; methods</button>
       </nav>
       <div class="panel-wrap">
         <div class="tabpanel" id="tab-map" role="tabpanel" aria-labelledby="tabbtn-map">
@@ -36,6 +40,7 @@
               <input type="range" id="m-pct" min="1" max="50" step="1" value="25">
               <span id="m-pct-val">25%</span>
             </span>
+            <button id="m-prosp" class="zone-btn" aria-pressed="false" title="Candidate areas for salt, water and potassium-rich ground, judged from NASA orbital data">Prospect zones</button>
           </div>
         </div>
 
@@ -48,6 +53,7 @@
                 <option>Curiosity</option><option>Spirit</option><option>Opportunity</option>
               </select>
             </div>
+            <div class="dep-legend" id="dep-legend" aria-label="Colour key"></div>
             <div class="dep-classes" id="dep-classes"></div>
             <h3>Deposit sites <span id="dep-count"></span></h3>
             <p class="hint">Measurements of the same deposit type within 250 m of each other are grouped into one site.</p>
@@ -56,6 +62,10 @@
               <tbody id="dep-rows"></tbody>
             </table>
           </div>
+        </div>
+
+        <div class="tabpanel" id="tab-data" role="tabpanel" aria-labelledby="tabbtn-data" hidden>
+          <div class="dep data" id="data-body"><p class="note">Loading data sources…</p></div>
         </div>
 
       </div>
@@ -72,13 +82,13 @@
         <div class="chem-grid" id="chem-grid"></div>
         <div class="live-class" id="live-class" aria-live="polite"></div>
         <div class="pos">
-          <span class="lbl">My position</span>
+          <span class="lbl">Position</span>
           <input id="lat" inputmode="decimal" placeholder="Latitude" aria-label="Latitude (degrees)">
           <input id="lon" inputmode="decimal" placeholder="Longitude °E" aria-label="East longitude (degrees)">
-          <button class="btn ghost" id="pick-btn">📍 Pick on map</button>
+          <button class="btn ghost" id="pick-btn"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>Pick on map</button>
         </div>
         <div class="row">
-          <label class="btn ghost file">📷 Field photo
+          <label class="btn ghost file"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>Field photo
             <input type="file" id="photo-input" accept="image/*" capture="environment" hidden>
           </label>
           <button class="btn ghost" id="clear-btn">Clear</button>
@@ -94,6 +104,17 @@
         <div class="facts" id="facts"></div>
         <h3>Closest measured rocks</h3>
         <ol class="matches" id="matches"></ol>
+        <div id="insights"></div>
+      </section>
+
+      <section class="card guide" id="card-guide" aria-labelledby="h-guide">
+        <h2 id="h-guide">How it works</h2>
+        <ol>
+          <li><b>Take a reading.</b> Set the sliders to your APXS values, or press Simulate to load a real rover measurement with its instrument noise.</li>
+          <li><b>Find match.</b> Regolith compares it with all 2,475 APXS measurements and tells you whether to sample, what the rock likely is, and why.</li>
+          <li><b>Look ahead.</b> See the likely minerals, what is within 1 km, and the water in the soil. On the map, turn on an element map or prospect zones.</li>
+        </ol>
+        <p class="note">Built only from NASA and Canadian Space Agency data. See the Data &amp; methods tab for every source and the accuracy tests.</p>
       </section>
 
       <section class="card" id="card-detail" aria-labelledby="d-title" hidden>

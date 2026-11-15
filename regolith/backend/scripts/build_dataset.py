@@ -18,6 +18,7 @@ import io
 import json
 import math
 import re
+import statistics
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -27,6 +28,10 @@ sys.path.insert(0, str(BACKEND))
 
 from rockmatch.chemistry import DEPOSIT_CLASSES, ELEMENTS, OXIDES, TRACES, classify  # noqa: E402
 from rockmatch.geo import MARS_EQ_RADIUS_M, fast_distance_m, wrap_lon  # noqa: E402
+from rockmatch.elements import grs_value  # noqa: E402
+from rockmatch.prospects import build as build_prospects  # noqa: E402
+from rockmatch.terrain import cell_means, load_dem  # noqa: E402
+from rockmatch.validate import run as run_validation  # noqa: E402
 
 RAW = BACKEND / "data" / "raw"
 OUT = BACKEND / "data"
@@ -448,16 +453,27 @@ def build_grs(report: list[str]) -> dict:
         cells = []
         for line in (d / f"{code}_sr_5x5.tab").read_text().splitlines():
             parts = line.split()
-            if len(parts) < 4:
+            if len(parts) < 5:
                 continue
-            lat, lon, conc, sig = (float(x) for x in parts[:4])
+            # columns (PDS label): centre lat, centre lon (0-360, east-positive - verified against NASA's browse
+            # maps), concentration, SIGMA, SIGMA WITH CFS (also includes the correction-factor errors)
+            lat, lon, conc, sig, sig_cfs = (float(x) for x in parts[:5])
             if conc >= 9999 or lon > 360:
                 continue
-            cells.append([lat, wrap_lon(lon), conc, None if sig >= 9999 else sig])
+            # SIGMA WITH CFS is "N/A" where no correction factors apply (all of K and Th): SIGMA is then the full error
+            err = sig_cfs if sig_cfs < 9999 else sig if sig < 9999 else None
+            cells.append([lat, wrap_lon(lon), conc, err])
         vals = sorted(c[2] for c in cells)
+        # NASA's polar mask follows a wavy edge: report where data stops (cell edges), across longitudes
+        north, south = defaultdict(lambda: -90.0), defaultdict(lambda: 90.0)
+        for la, lo, *_ in cells:
+            north[lo] = max(north[lo], la + 2.5)
+            south[lo] = min(south[lo], la - 2.5)
         out[key] = {"label": label, "unit": unit, "file": f"{code}_sr_5x5.tab", "cells": cells,
-                    "min": vals[0], "max": vals[-1], "median": vals[len(vals) // 2],
-                    "lat_range": [min(c[0] for c in cells), max(c[0] for c in cells)]}
+                    "min": vals[0], "max": vals[-1], "median": statistics.median(vals),
+                    "lat_range": [min(c[0] for c in cells), max(c[0] for c in cells)],
+                    "data_edge": {"north": [min(north.values()), max(north.values())],
+                                  "south": [max(south.values()), min(south.values())]}}
         report.append(f"Odyssey GRS {label}: {len(cells)} cells, {vals[0]:.3f}-{vals[-1]:.3f} {unit}")
     return out
 
@@ -529,6 +545,16 @@ def main() -> None:
     rocks = msl + mer
     refs = build_earth_refs(report)
     grs = build_grs(report)
+    prospects = None
+    if grs and (RAW / "trek_mola_dem_z2").exists():
+        elev = cell_means(load_dem(RAW / "trek_mola_dem_z2"))
+        cur = [r for r in rocks if r["rover"] == "Curiosity"]
+        gale_h2o = grs_value(grs, "H2O", sum(r["lat"] for r in cur) / len(cur), sum(r["lon"] for r in cur) / len(cur))
+        prospects = build_prospects(grs, elev, rocks, {c["id"]: c["label"] for c in DEPOSIT_CLASSES}, gale_h2o)
+        for k, v in prospects.items():
+            report.append(f"Prospect zones - {v['label']}: {v['n_cells']} cells in {len(v['zones'])} zones")
+    else:
+        report.append("Prospect zones: skipped (needs fetch_data.py --only grs and --only mola)")
     deposits = cluster_deposits(rocks)
 
     cls_counts = Counter(r["deposit"] for r in rocks)
@@ -562,12 +588,28 @@ def main() -> None:
     (OUT / "traverses.json").write_text(json.dumps({"Curiosity": msl_path, **mer_paths}, separators=(",", ":")))
     (OUT / "earth_refs.json").write_text(json.dumps({"source": CITATIONS["CSA"], "references": refs}, indent=1))
     (OUT / "grs_maps.json").write_text(json.dumps({
-        "source": "Mars Odyssey Gamma Ray Spectrometer element concentration maps, 5x5 degree bins smoothed with a "
-                  "boxcar filter (ODY-M-GRS-5-ELEMENTS-V1.0, NASA PDS Geosciences Node). Boynton et al. (2007), JGR 112, E12S99.",
+        "source": "Mars Odyssey Gamma Ray Spectrometer element concentration maps (ODY-M-GRS-5-ELEMENTS-V1.0, "
+                  "NASA PDS Geosciences Node), collected 2002-06-04 to 2005-04-03. Smoothed from 2x2 degree data with "
+                  "a 10-degree boxcar and rebinned on a 5x5 degree grid. Boynton et al. (2007), JGR 112, E12S99.",
         "url": "https://pds-geosciences.wustl.edu/ody/ody-m-grs-5-elements-v1/",
-        "note": "Gamma rays sample roughly the top few tens of centimetres. Non-radioactive elements are masked poleward "
-                "of ~60 degrees because of polar hydrogen and CO2 frost.",
+        "browse": "https://pds-geosciences.wustl.edu/ody/ody-m-grs-5-elements-v1/odgm_xxxx/browse/",
+        "note": "NASA masks all non-radioactive elements in the polar regions, where it cannot yet correct for "
+                "dilution by water ice; K and Th are global. Gamma rays come from roughly the top few tens of "
+                "centimetres of the surface (Boynton et al. 2007). Errors are 1 sigma: NASA's SIGMA WITH CFS (which "
+                "includes correction-factor errors) or SIGMA where no correction factors apply (K, Th).",
         "maps": grs}, separators=(",", ":")))
+    validation = run_validation(rocks)
+    (OUT / "validation.json").write_text(json.dumps(validation, indent=1))
+    m, nb = validation["matching"], validation["nearby"]
+    report.append(f"Hold-out tests: re-measured rock found first {m['remeasure_top1_pct']}% (top five {m['remeasure_top5_pct']}%), "
+                  f"same type {m['remeasure_same_type_pct']}%; new-stop forecast top-1 {nb['top1_pct']}% vs baseline "
+                  f"{nb['baseline_pct']}%, top-3 {nb['top3_pct']}% over {nb['n']} cases")
+    if prospects:
+        (OUT / "prospects.json").write_text(json.dumps({
+            "source": "Rules over NASA orbital data only: Mars Odyssey GRS element maps (ODY-M-GRS-5-ELEMENTS-V1.0) "
+                      "and MGS MOLA elevation (NASA Mars Trek, Mars_MGS_MOLA_DEM_mosaic_global_463m_8), on NASA's "
+                      "5x5 degree cells. Rover measurements are shown as ground truth but never used to draw zones.",
+            "kinds": prospects}, separators=(",", ":")))
 
     print("\n".join(report))
     print(f"\nTotal: {len(rocks)} measurements, {len(deposits)} deposit sites")
@@ -591,7 +633,7 @@ def main() -> None:
             r = rs[0]
             print(f"  {rover:<11} sol {r['sol']:>4} at {r['lat']:.4f},{r['lon']:.4f}  ~{label} ({lat},{lon}): "
                   f"{fast_distance_m(r['lat'], r['lon'], lat, lon) / 1000:.1f} km apart")
-    for f in ("apxs_rocks.json", "deposits.json", "traverses.json", "earth_refs.json", "grs_maps.json"):
+    for f in ("apxs_rocks.json", "deposits.json", "traverses.json", "earth_refs.json", "grs_maps.json", "prospects.json", "validation.json"):
         print(f"wrote {OUT / f} ({(OUT / f).stat().st_size / 1e6:.2f} MB)")
 
 

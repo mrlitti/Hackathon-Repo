@@ -4,17 +4,29 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Mars Globe</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='13' fill='%23c1440e'/%3E%3Ccircle cx='11' cy='12' r='3' fill='%23e86a3a'/%3E%3Ccircle cx='20' cy='20' r='4' fill='%23a3360a'/%3E%3C/svg%3E">
 <style>
   :root { --bg:#000; --panel:rgba(8,8,8,.86); --line:#262626; --text:#ddd; --dim:#7a7a7a; --accent:#ff6a3d; --blue:#6cf; }
   * { box-sizing:border-box; }
-  html,body { margin:0; height:100%; background:var(--bg); color:var(--text); font:13px/1.4 system-ui,sans-serif; overflow:hidden; }
+  html,body { margin:0; height:100%; background:var(--bg); color:var(--text); font:13px/1.45 Inter,system-ui,sans-serif; overflow:hidden;
+              -webkit-font-smoothing:antialiased; }
   #scene { position:fixed; inset:0; }
   .panel { position:fixed; z-index:10; background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:12px; backdrop-filter:blur(6px); }
   #controls { top:12px; left:12px; width:260px; max-height:calc(100% - 136px); overflow:auto; }  /* leaves room for the readout */
   #controls header { display:flex; align-items:baseline; justify-content:space-between; cursor:pointer; }
   #controls.collapsed .body { display:none; }
-  h1 { margin:0; font-size:15px; letter-spacing:4px; color:var(--accent); }
+  h1 { margin:0; font-size:14px; font-weight:600; letter-spacing:0; color:#f0efec; display:flex; align-items:center; gap:8px; }
+  h1::before { content:''; width:10px; height:10px; border-radius:50%; background:var(--accent); box-shadow:0 0 0 3px rgba(255,106,61,.18); }
+  #controls-head .sub::after { content:''; display:inline-block; width:6px; height:6px; margin-left:7px; vertical-align:2px;
+    border-right:1.5px solid currentColor; border-bottom:1.5px solid currentColor; transform:rotate(45deg); transition:transform .15s; }
+  #controls.collapsed #controls-head .sub::after { transform:rotate(-45deg); }
+  @media (max-width:700px) { html body.embed #map-key { display:none; } }
+  /* stacking of labels in the CSS2D layer: the selected rock's name always reads on top */
+  .sel-label { z-index:3; }                  /* CSS2DRenderer makes each label position:absolute */
+  .target { z-index:2; }
+  .pin { z-index:1; }
   .sub { color:var(--dim); font-size:11px; }
   h2 { margin:14px 0 6px; font-size:10px; letter-spacing:2px; text-transform:uppercase; color:var(--dim); }
   label { display:flex; align-items:center; gap:8px; margin:3px 0; cursor:pointer; }
@@ -64,17 +76,19 @@
   .photos .note { grid-column:1/-1; }
   .cta { display:block; margin-top:8px; text-align:center; padding:7px; border-radius:6px; background:var(--accent); color:#000; font-weight:600; text-decoration:none; }
   #info a { color:var(--blue); }
-  .you { color:#fff; font-size:11px; font-weight:700; text-shadow:0 0 4px #000; display:flex; flex-direction:column; align-items:center; pointer-events:none; }
-  .you span { width:14px; height:14px; border-radius:50%; background:#00e5ff; border:2px solid #fff; margin-bottom:2px; animation:pulse 1.6s infinite; }
-  @keyframes pulse { 0% { box-shadow:0 0 0 0 rgba(0,229,255,.75); } 100% { box-shadow:0 0 0 16px rgba(0,229,255,0); } }
   body.embed #credit { display:none; }
   body.embed #rcol { top:64px; }            /* clear Regolith's element toolbar overlaid on the frame */
+  #map-key { display:none; top:68px; left:12px; padding:6px 10px; max-width:260px; font-size:11px; color:#c3c2b7; flex-direction:column; gap:3px; }
+  #map-key span { display:flex; align-items:center; }
+  body.embed #map-key { display:flex; }
+  body.embed.elem-on #map-key, body.embed:not(.apxs-on) #map-key { display:none; }
   body.picking canvas { cursor:crosshair; }
   #elem-panel { display:none; margin-top:auto; }
   #elem-panel a { color:var(--blue); }
-  #elem-panel.min .src { display:none; }
-  #elem-panel.min h3 { margin:0; }
+  #elem-panel.min .more { display:none; }               /* collapsed = compact legend: title and colour ramps */
   #elem-min { right:40px; }
+  .site-row { margin-top:6px; }
+  .site-row .dim { color:var(--dim); }
   .hot-meta { display:block; color:var(--dim); font-size:11px; }
   #elem-panel h3 { margin:0 0 6px; font-size:14px; color:#f0efec; padding-right:60px; }
   #elem-panel .src { margin-top:8px; padding-top:8px; border-top:1px solid #262626; font-size:12px; color:#c3c2b7; }
@@ -84,13 +98,58 @@
   .hot { display:flex; justify-content:space-between; align-items:baseline; gap:8px; padding:3px 0; cursor:pointer; color:#c3c2b7; }
   .hot:hover { color:#fff; }
   .hot > span:last-child { color:#f0efec; font-variant-numeric:tabular-nums; white-space:nowrap; }
-  .hot-label { background:rgba(10,30,60,.88); border:1px solid #5598e7; color:#fff; border-radius:10px; padding:2px 8px; font-size:11px; white-space:nowrap; pointer-events:none; }
+  .hot-label { background:rgba(0,0,0,.85); border:1px solid #fff; color:#fff; border-radius:10px; padding:2px 8px; font-size:11px; white-space:nowrap; pointer-events:none; }
   body.elem-on #credit { display:none; }
-  body.picking .pin, body.picking .label, body.picking .badge { pointer-events:none; }
-  .pin { width:22px; height:22px; border-radius:50%; background:#fff; color:#111; font:700 12px/22px system-ui; text-align:center;
-         box-shadow:0 0 0 2px #111, 0 2px 8px rgba(0,0,0,.6); pointer-events:auto; cursor:pointer; }
-  .pin.sel { background:#ff6a3d; color:#000; }
-  .sel-label { background:rgba(0,0,0,.82); color:#fff; border:1px solid #ff6a3d; border-radius:12px; padding:3px 10px;
+  body.picking .pin-head, body.picking .label, body.picking .badge, body.picking .zone-label { pointer-events:none; }
+  /* numbered pin on a stem: the stem's tip is exactly on the rock */
+  .pin { display:flex; flex-direction:column; align-items:center; pointer-events:none; }
+  .pin-head { width:22px; height:22px; border-radius:50%; background:#fff; color:#111; font:700 12px/22px system-ui; text-align:center;
+              box-shadow:0 0 0 2px #111, 0 2px 8px rgba(0,0,0,.6); pointer-events:auto; cursor:pointer; }
+  .pin-stem { width:2px; height:18px; background:#fff; box-shadow:0 0 0 1px rgba(0,0,0,.7); }
+  .pin-head.multi { width:auto; min-width:22px; padding:0 7px; border-radius:11px; }
+  .pin.sel .pin-head { background:#ff6a3d; color:#000; }
+  .pin.sel .pin-stem { background:#ff6a3d; height:38px; }   /* clears the target ring */
+  /* target reticle centred on the selected rock (animation on the child: CSS2D owns the wrapper's transform) */
+  .target { pointer-events:none; }
+  .target i { display:block; width:44px; height:44px; border-radius:50%; border:2px solid #ff6a3d; position:relative;
+              box-shadow:0 0 0 2px rgba(0,0,0,.75), inset 0 0 0 2px rgba(0,0,0,.6); animation:tpulse 1.4s ease-in-out infinite; }
+  .target i::before, .target i::after { content:''; position:absolute; }
+  .target i::before { left:50%; top:-12px; bottom:-12px; width:2px; margin-left:-1px;
+    background:linear-gradient(#ff6a3d 0 11px, transparent 11px calc(100% - 11px), #ff6a3d calc(100% - 11px)); }
+  .target i::after { top:50%; left:-12px; right:-12px; height:2px; margin-top:-1px;
+    background:linear-gradient(90deg, #ff6a3d 0 11px, transparent 11px calc(100% - 11px), #ff6a3d calc(100% - 11px)); }
+  @keyframes tpulse { 50% { transform:scale(1.15); } }
+  /* prospect zones */
+  .zone-label { background:rgba(0,0,0,.84); border:2px solid var(--c); color:#fff; border-radius:8px; padding:4px 10px; text-align:center;
+                font:600 13px/1.25 system-ui; white-space:nowrap; cursor:pointer; pointer-events:auto; }
+  .zone-label small { display:block; font-weight:400; font-size:11px; color:#c3c2b7; }
+  .zone-label.sel { box-shadow:0 0 0 2px #fff; }
+  #zone-panel { display:none; margin-top:auto; }
+  #zone-panel h3 { margin:0 0 6px; font-size:14px; color:#f0efec; padding-right:30px; }
+  #zone-panel .src { margin-top:8px; padding-top:8px; border-top:1px solid #262626; font-size:12px; color:#c3c2b7; }
+  #zone-panel .src b { color:#f0efec; }
+  #zone-panel a { color:var(--blue); }
+  .zkind { display:grid; grid-template-columns:auto 14px 1fr; gap:7px; align-items:start; margin:7px 0; font-size:12px; cursor:pointer; }
+  .zkind input { margin:2px 0 0; }
+  .zswatch { width:14px; height:14px; margin-top:1px; border-radius:3px; border:2px solid var(--c); background:color-mix(in srgb, var(--c) 45%, transparent); }
+  .zkind .dim, #zone-panel .dim { color:var(--dim); }
+  .zone-detail .zt { font-size:13px; font-weight:700; color:#f0efec; }
+  .zone-detail p { margin:5px 0; }
+  .est { display:inline-block; font-size:9.5px; letter-spacing:.5px; padding:0 5px; border-radius:4px; border:1px solid #5a4a1a; color:#f5d27a;
+         text-transform:uppercase; font-weight:600; vertical-align:1px; }
+  .wbig { font-size:17px; font-weight:600; color:#f0efec; font-variant-numeric:tabular-nums; }
+  .soilv { display:inline-block; margin-right:8px; font-variant-numeric:tabular-nums; }
+  .ok-mark { display:inline-block; font-size:10px; font-weight:700; letter-spacing:.4px; text-transform:uppercase; color:#0ca30c;
+             border:1px solid #0ca30c; border-radius:4px; padding:0 4px; margin-right:2px; vertical-align:1px; }
+  .ic { width:15px; height:15px; flex:none; vertical-align:-3px; margin-right:6px; }
+  button.ib { display:inline-flex; align-items:center; justify-content:center; }
+  a[target="_blank"]::after { content:''; display:inline-block; width:.8em; height:.8em; margin-left:3px; vertical-align:-1px;
+    background:currentColor; -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7 7h10v10M7 17 17 7'/%3E%3C/svg%3E") center/contain no-repeat; mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7 7h10v10M7 17 17 7'/%3E%3C/svg%3E") center/contain no-repeat; }
+  .cta[target]::after, a.cta::after { display:none; }
+  body.embed.prosp-on #map-key { display:none; }
+  body.embed .zrule, body.embed .zlong { display:none; }      /* compact legend inside Regolith; rules on hover */
+  body.embed .zkind { margin:4px 0; }
+  .sel-label { margin-left:30px; background:rgba(0,0,0,.82); color:#fff; border:1px solid #ff6a3d; border-radius:12px; padding:3px 10px;
                font-size:12px; font-weight:600; white-space:nowrap; pointer-events:none; }
   .sel-label small { color:#c3c2b7; font-weight:400; margin-left:6px; }
   @media (max-width:700px) {
@@ -112,7 +171,7 @@
 <div id="scene"></div>
 
 <div id="controls" class="panel">
-  <header id="controls-head"><h1>MARS</h1><span class="sub">NASA data globe ▾</span></header>
+  <header id="controls-head"><h1>Mars globe</h1><span class="sub"></span></header>
   <div class="body">
     <h2>Surface layer</h2>
     <select id="layer">
@@ -144,7 +203,7 @@
     </select>
     <div id="time-block">
       <input id="time" type="range" min="-24" max="24" step="0.1" value="0">
-      <div class="row"><button id="play">▶ Play</button><button id="now">Now</button></div>
+      <div class="row"><button id="play" class="ib"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16l13-8z"/></svg>Play</button><button id="now">Now</button></div>
       <div class="note" id="time-val"></div>
     </div>
 
@@ -170,6 +229,7 @@
         <input id="elem-pct" type="range" min="50" max="99" step="1" value="75">
         <div class="note" id="elem-pct-val"></div>
       </div>
+      <label style="margin-top:8px"><input type="checkbox" id="show-prospects"> Prospect zones (judged from orbit)</label>
       <div id="legend"></div>
       <label><input type="checkbox" id="show-apxs" checked> Show measurements</label>
       <label><input type="checkbox" id="show-trav" checked> Rover traverses</label>
@@ -177,7 +237,7 @@
     </div>
 
     <h2>Tools</h2>
-    <button id="measure-btn">📏 Measure distance &amp; profile</button>
+    <button id="measure-btn" class="ib"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.41 2.41 0 0 1 0-3.4l2.6-2.6a2.41 2.41 0 0 1 3.4 0Z"/><path d="m14.5 12.5 2-2M11.5 9.5l2-2M8.5 6.5l2-2M17.5 15.5l2-2"/></svg>Measure distance &amp; profile</button>
 
     <h2>Fly to</h2>
     <select id="flyto"><option value="">Choose a place…</option></select>
@@ -186,6 +246,7 @@
   </div>
 </div>
 
+<div id="map-key" class="panel" aria-label="Rock colour key"></div>
 <div id="readout" class="panel"><div id="ro-main">Hover the globe</div><div id="ro-sub" class="dim"></div></div>
 
 <div id="rcol">
@@ -194,6 +255,10 @@
   <h3 id="info-title"></h3>
   <div class="meta" id="info-meta"></div>
   <div id="info-body"></div>
+</div>
+<div id="zone-panel" class="panel" aria-live="polite">
+  <button class="close" id="zone-close" title="Turn off prospect zones">×</button>
+  <div id="zone-body"></div>
 </div>
 <div id="elem-panel" class="panel" aria-live="polite">
   <button class="close" id="elem-min" title="Collapse panel" aria-expanded="true">–</button>
@@ -274,10 +339,10 @@ const PHOBOS_AXES_KM = [13.5, 9, 11];   // x, y (spin axis), z semi-axes
 
 /* places: planetocentric lat, east lon. tier 0 = always, 1 = global, 2 = regional, 3 = local */
 const SITES = [
-  { name: 'Curiosity (MSL)', lat: -4.5895, lon: 137.4417, year: 2012, body: 'Gale Crater, climbing Mount Sharp. Carries the Canadian-built APXS (CSA). Studied boxwork ridges in 2025.' },
+  { name: 'Curiosity (MSL)', lat: -4.5895, lon: 137.4417, year: 2012, body: 'Gale Crater, climbing Mount Sharp. Carries the APXS provided by the Canadian Space Agency. Studied boxwork ridges in 2025.' },
   { name: 'Perseverance (M2020)', lat: 18.4447, lon: 77.4508, year: 2021, body: 'Jezero Crater, an ancient lake and river delta. Caching samples for possible return to Earth.' },
-  { name: 'Spirit (MER-A)', lat: -14.5684, lon: 175.4726, year: 2004, body: 'Gusev Crater. Found hot-spring silica near Home Plate; stuck in soft sand at "Troy" in 2009. Carried APXS (CSA).' },
-  { name: 'Opportunity (MER-B)', lat: -1.9462, lon: -5.5266, year: 2004, body: 'Meridiani Planum. Hematite "blueberries", gypsum veins at Endeavour Crater; drove 45 km. Carried APXS (CSA).' },
+  { name: 'Spirit (MER-A)', lat: -14.5684, lon: 175.4726, year: 2004, body: 'Gusev Crater. Found hot-spring silica near Home Plate; stuck in soft sand at "Troy" in 2009. Carried an earlier APXS; its data is in NASA\'s PDS.' },
+  { name: 'Opportunity (MER-B)', lat: -1.9462, lon: -5.5266, year: 2004, body: 'Meridiani Planum. Hematite "blueberries", gypsum veins at Endeavour Crater; drove 45 km. Carried an earlier APXS; its data is in NASA\'s PDS.' },
   { name: 'Phoenix', lat: 68.2188, lon: -125.7492, year: 2008, body: 'Northern plains. Dug into water ice. Canadian MET station and LIDAR (CSA) saw snow falling from clouds.' },
   { name: 'InSight', lat: 4.5024, lon: 135.6234, year: 2018, body: 'Elysium Planitia. Seismometer recorded marsquakes and mapped the planet’s core and crust.' },
   { name: 'Mars Pathfinder', lat: 19.13, lon: -33.22, year: 1997, body: 'Ares Vallis flood plain. Delivered Sojourner, the first Mars rover.' },
@@ -388,7 +453,7 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(45, 1, 1e-5, 400);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
-controls.dampingFactor = 0.08;
+controls.dampingFactor = 0.12;                               // firmer stop after a drag
 controls.enablePan = false;
 controls.maxDistance = 14;
 controls.autoRotate = true;
@@ -578,6 +643,7 @@ function buildDem(e, img) {
     for (let i = 0; i < S * S; i++) raw[i] = d[i * 4] / 255;
   } else raw.fill(DATUM_NORM);
   e.heights = blur(blur(raw)); // smooths 8-bit terracing
+  drapeDue = true;              // overlays follow the new heights on the next frame
   const half = new Uint16Array(S * S);
   for (let j = 0; j < S; j++) for (let i = 0; i < S; i++)
     half[(S - 1 - j) * S + i] = THREE.DataUtils.toHalfFloat(e.heights[j * S + i]);
@@ -715,9 +781,99 @@ const dtTmp = Object.assign(document.createElement('canvas'), { width: S, height
 const dtLow = Object.assign(document.createElement('canvas'), { width: S, height: S }).getContext('2d', { willReadFrequently: true });
 const dtSmall = Object.assign(document.createElement('canvas'), { width: S, height: S }).getContext('2d');
 const fxCrop = Object.assign(document.createElement('canvas'), { width: S, height: S }).getContext('2d');
-function transferDetail(g, img, sx, sy, sw, sh, basePx, gain = 1) {
+// The per-pixel work runs in Web Workers (OffscreenCanvas): reading pixels back and looping over them on the
+// main thread is what made panning stutter while tiles streamed in. Same maths as transferDetailSync below.
+const DT_WORKER_SRC = `
+let a, d, l, t;
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+const decoded = new Map();                                   // tile url -> decoded bitmap (LRU)
+function source(key, blob) {
+  let p = decoded.get(key);
+  if (p) { decoded.delete(key); decoded.set(key, p); return p; }
+  p = createImageBitmap(blob);
+  decoded.set(key, p);
+  if (decoded.size > 160) { const [k, old] = decoded.entries().next().value; decoded.delete(k); old.then((b) => b.close(), () => {}); }
+  return p;
+}
+onmessage = async (e) => {
+  const { id, base, key, blob, sx, sy, sw, sh, lp, gain, S } = e.data;
+  try {
+    const src = await source(key, blob);
+    if (!a || a.canvas.width !== S) {
+      const mk = () => new OffscreenCanvas(S, S).getContext('2d', { willReadFrequently: true });
+      a = mk(); d = mk(); l = mk(); t = mk();
+    }
+    a.clearRect(0, 0, S, S); a.drawImage(base, 0, 0);
+    d.clearRect(0, 0, S, S); d.drawImage(src, sx, sy, sw, sh, 0, 0, S, S);
+    t.clearRect(0, 0, S, S); t.drawImage(src, sx, sy, sw, sh, 0, 0, lp, lp);   // blur to the base layer's resolution
+    l.clearRect(0, 0, S, S); l.drawImage(t.canvas, 0, 0, lp, lp, 0, 0, S, S);  // ... and back up (bilinear), separate canvases
+    const dd = d.getImageData(0, 0, S, S).data, low = l.getImageData(0, 0, S, S).data;
+    const B = a.getImageData(0, 0, S, S), b = B.data;
+    for (let i = 0; i < b.length; i += 4) {
+      const al = dd[i + 3] / 255, ld = dd[i] * 0.3 + dd[i + 1] * 0.59 + dd[i + 2] * 0.11;
+      if (al === 0 || low[i + 3] === 0 || ld < 6) continue;
+      const ratio = clamp((ld + 6) / (low[i] * 0.3 + low[i + 1] * 0.59 + low[i + 2] * 0.11 + 6), 0.2, 4);
+      const k = 1 + (ratio ** gain - 1) * al;
+      b[i] = Math.min(255, b[i] * k); b[i + 1] = Math.min(255, b[i + 1] * k); b[i + 2] = Math.min(255, b[i + 2] * k);
+    }
+    a.putImageData(B, 0, 0);
+    const out = a.canvas.transferToImageBitmap();
+    postMessage({ id, out }, [out]);
+  } catch (err) { decoded.delete(key); postMessage({ id, error: String(err) }); }
+  finally { base.close(); }
+};`;
+const dtPool = (() => {
+  if (typeof OffscreenCanvas === 'undefined' || typeof createImageBitmap === 'undefined' || new URLSearchParams(location.search).get('workers') === '0') return null;
+  try {
+    const url = URL.createObjectURL(new Blob([DT_WORKER_SRC], { type: 'text/javascript' }));
+    const workers = [0, 1].map(() => new Worker(url));
+    const waiting = new Map();
+    let next = 0, seq = 0;
+    workers.forEach((w) => (w.onmessage = (e) => {
+      const p = waiting.get(e.data.id);
+      waiting.delete(e.data.id);
+      if (p) e.data.error ? p.reject(new Error(e.data.error)) : p.resolve(e.data.out);
+    }));
+    return {
+      run(msg, transfer) {
+        const id = ++seq;
+        let h = 0;                                          // same tile -> same worker, so its decode cache hits
+        for (let i = 0; i < msg.key.length; i++) h = (h * 31 + msg.key.charCodeAt(i)) | 0;
+        return new Promise((resolve, reject) => {
+          waiting.set(id, { resolve, reject });
+          workers[Math.abs(h) % workers.length].postMessage({ ...msg, id }, transfer);
+        });
+      },
+    };
+  } catch { return null; }
+})();
+// Detail layers go to the workers as the downloaded file (a Blob, from the HTTP cache) and are decoded there:
+// createImageBitmap(<img>) on the main thread re-decodes synchronously, and posting bitmaps copies pixels.
+const srcBlobs = new WeakMap();
+function srcBlob(img) {
+  let p = srcBlobs.get(img);
+  if (!p) {
+    p = fetch(img.src, { mode: 'cors', credentials: 'omit' }).then((r) => (r.ok ? r.blob() : Promise.reject(new Error(r.status))));
+    srcBlobs.set(img, p);
+  }
+  return p;
+}
+async function transferDetail(g, img, sx, sy, sw, sh, basePx, gain = 1) {
   const lp = clamp(Math.round(basePx), 1, S);
-  if (lp >= S) return;                                  // base already has full detail
+  if (lp >= S) return;
+  if (dtPool) {
+    try {
+      const [base, blob] = await Promise.all([createImageBitmap(g.canvas), srcBlob(img)]);
+      const out = await dtPool.run({ base, key: img.src, blob, sx, sy, sw, sh, lp, gain, S }, [base]);
+      g.clearRect(0, 0, S, S);
+      g.drawImage(out, 0, 0);
+      out.close();
+      return;
+    } catch { /* rare undecodable tile: fall back to the main thread below */ }
+  }
+  transferDetailSync(g, img, sx, sy, sw, sh, lp, gain);
+}
+function transferDetailSync(g, img, sx, sy, sw, sh, lp, gain) {
   dtTmp.clearRect(0, 0, S, S);
   dtTmp.drawImage(img, sx, sy, sw, sh, 0, 0, S, S);
   dtSmall.clearRect(0, 0, S, S);
@@ -754,13 +910,14 @@ async function compositeTile(n) {
       if (n.dead) return null;
       const c = document.createElement('canvas');
       c.width = c.height = S;
-      const g = c.getContext('2d', { willReadFrequently: true });
+      const g = c.getContext('2d', { willReadFrequently: !dtPool });
       g.drawImage(base, (n.x % 2 ** k) * sub, (n.y % 2 ** k) * sub, sub, sub, 0, 0, S, S);
-      hjobs.forEach((j, i) => {
-        if (!himgs[i]) return;
-        const kk = n.z - j.hz, hs = S / 2 ** kk;
-        transferDetail(g, himgs[i], (n.x % 2 ** kk) * hs, (n.y % 2 ** kk) * hs, hs, hs, sub, 1.1);
-      });
+      for (let i = 0; i < hjobs.length; i++) {
+        if (!himgs[i]) continue;
+        const kk = n.z - hjobs[i].hz, hs = S / 2 ** kk;
+        await transferDetail(g, himgs[i], (n.x % 2 ** kk) * hs, (n.y % 2 ** kk) * hs, hs, hs, sub, 1.1);
+        if (n.dead) return null;
+      }
       return c;
     }
   }
@@ -786,9 +943,10 @@ async function compositeTile(n) {
   if (n.dead || !imgs[0]) return null;
   const c = document.createElement('canvas');
   c.width = c.height = S;
-  const g = c.getContext('2d', { willReadFrequently: true });
-  jobs.forEach((j, i) => {
-    if (!imgs[i]) return;
+  const g = c.getContext('2d', { willReadFrequently: !dtPool });
+  for (let i = 0; i < jobs.length; i++) {
+    const j = jobs[i];
+    if (!imgs[i]) continue;
     const k = n.z - j.z, sub = j.size / 2 ** k, sx = (n.x % 2 ** k) * sub, sy = (n.y % 2 ** k) * sub;
     if (j.mode) {                                   // Viking colour, then CTX luminance on top
       g.globalCompositeOperation = j.mode;
@@ -802,11 +960,12 @@ async function compositeTile(n) {
       g.globalCompositeOperation = 'source-over';
       g.globalAlpha = 1;
     } else if (j.ctx) {                             // mid zoom: CTX detail on top of Viking brightness
-      transferDetail(g, imgs[i], sx, sy, sub, sub, S / 2 ** (n.z - vz), 1.25);
+      await transferDetail(g, imgs[i], sx, sy, sub, sub, S / 2 ** (n.z - vz), 1.25);
     } else {                                        // HiRISE: only the detail CTX lacks
-      transferDetail(g, imgs[i], sx, sy, sub, sub, imgs[1] ? j.basePx : S / 2 ** (n.z - vz), 1.1);
+      await transferDetail(g, imgs[i], sx, sy, sub, sub, imgs[1] ? j.basePx : S / 2 ** (n.z - vz), 1.1);
     }
-  });
+    if (n.dead) return null;
+  }
   return c;
 }
 
@@ -843,6 +1002,7 @@ class Node {
     globe.add(this.mesh);
     this.hN = sampleHeight((this.latN + this.latS) / 2, (this.lonW + this.lonE) / 2);
     this.ready = true;
+    wake();
     live.add(this);
   }
   split() {
@@ -957,7 +1117,7 @@ SITES.forEach((s) => addMarker(s, 'site'));
 FEATURES.forEach((f) => addMarker(f, 'feature'));
 
 function placeMarkers() {
-  markers.forEach((m) => { const p = m.userData.place; toVec(p.lat, p.lon, surfaceR(sampleHeight(p.lat, p.lon)) + 0.002, m.position); });
+  markers.forEach((m) => { const p = m.userData.place; m.userData.groundR = surfaceR(sampleHeight(p.lat, p.lon)); });
   grid.scale.setScalar(R + (1 - DATUM_NORM) * dispScale() + 0.002);
 }
 
@@ -973,7 +1133,10 @@ function updateMarkers() {
     const facing = tmpV.dot(camN) > cosH + margin; // hide labels near the limb
     const on = show[kind] && facing && tierOk[tier];
     m.visible = on; label.visible = on;
-    m.scale.setScalar(camera.position.distanceTo(m.position) * 0.0045);
+    const sc = camera.position.distanceTo(m.position) * 0.0045;
+    m.scale.setScalar(sc);
+    const p = m.userData.place;                                   // rest on the ground (no floating, no parallax)
+    toVec(p.lat, p.lon, (m.userData.groundR ?? R) + sc, m.position);
   });
 }
 
@@ -994,7 +1157,7 @@ function orbitRing(r) {
 }
 async function stitch(layer, z, cols, rows) {
   const c = document.createElement('canvas'); c.width = cols * S; c.height = rows * S;
-  const g = c.getContext('2d', { willReadFrequently: true });
+  const g = c.getContext('2d', { willReadFrequently: !dtPool });
   await Promise.all([...Array(cols * rows).keys()].map(async (i) => {
     const x = i % cols, y = Math.floor(i / cols), img = await requestImage(tileURL(layer, z, x, y));
     if (img) g.drawImage(img, x * S, y * S);
@@ -1103,7 +1266,10 @@ flyto.onchange = () => {
 };
 // far enough that the whole planet fits, including on tall phone screens
 const homeDist = () => Math.max(3.4, 1 / Math.sin(0.85 * Math.atan(Math.tan(camera.fov * D2R / 2) * camera.aspect)));
-const homeView = () => toVec(clamp(state.m24.subLat + 12, -60, 60), state.m24.subLon - 35, homeDist());
+const EMBED_HOME = new URLSearchParams(location.search).get('embed') === '1';
+// Embedded in Regolith the globe opens over Gale and Gusev, where two of the three APXS rovers worked;
+// standalone it opens on the sunlit side for the current Mars time.
+const homeView = () => (EMBED_HOME ? toVec(2, 150, homeDist()) : toVec(clamp(state.m24.subLat + 12, -60, 60), state.m24.subLon - 35, homeDist()));
 document.getElementById('reset').onclick = () => {
   flight = { from: camera.position.clone(), to: homeView(), t: 0 };
   info.style.display = 'none';
@@ -1208,7 +1374,7 @@ renderer.domElement.addEventListener('pointerup', (e) => {
     const id = apxs.rocks[i].id;
     selectRock(id, { info: !EMBED });
     post({ type: 'rm:rock', id });
-  }
+  } else if (ll && prosp.on) showForecast(ll.lat, ll.lon);    // prospect mode: predictions for any spot
 });
 function updateReadout() {
   const main = document.getElementById('ro-main');
@@ -1216,7 +1382,11 @@ function updateReadout() {
     const h = sampleHeight(hover.lat, hover.lon);
     main.innerHTML = `${fmtLL(hover.lat, hover.lon)} · ${h != null ? `elev ≈ ${fmtM(heightToM(h))}` : ''}` +
       `<br><span class="dim">local solar time ${fmtH(localSolarTime(state.m24, hover.lon))}</span>` +
-      ((c) => (c ? `<br><span class="dim">Odyssey GRS ${esc(elem.data.key)} ≈ ${fmtV(c[0], elem.data.grs.unit)}${c[1] != null ? ` ± ${c[1]}` : ''} (5° cell)</span>` : ''))(grsAt(hover.lat, hover.lon));
+      (elem.data?.grs ? ((c) => `<br><span class="dim">Odyssey GRS ${esc(elem.data.key)}: ${c
+        ? `${fmtV(c[0], elem.data.grs.unit)}${c[1] != null ? ` ± ${c[1]} (1σ)` : ''}, 5° cell${c[0] >= elem.data.grs.threshold ? ' · highlighted' : ''}`
+        : 'no data here (masked by NASA)'}</span>`)(grsAt(hover.lat, hover.lon)) : '') +
+      (prosp.on && prosp.cellKinds ? ((z) => (z.length ? `<br><span class="dim">Prospect zone: ${z.map((x) => esc(prosp.data.kinds[x.kind].short)).join(', ')}</span>` : ''))(
+        (prosp.cellKinds.get(cellKey(hover.lat, hover.lon)) || []).filter((x) => prosp.show.has(x.kind))) : '');
   } else main.textContent = 'Hover the globe for coordinates';
 }
 function updateStatus() {
@@ -1264,7 +1434,7 @@ $('tilt').oninput = (e) => {
 
 $('sunmode').onchange = (e) => { state.sunMode = e.target.value; $('time-block').style.display = state.sunMode === 'real' ? '' : 'none'; };
 $('time').oninput = (e) => { state.offsetH = +e.target.value; };
-$('play').onclick = () => { state.playing = !state.playing; $('play').textContent = state.playing ? '❚❚ Pause' : '▶ Play'; $('play').classList.toggle('on', state.playing); };
+$('play').onclick = () => { state.playing = !state.playing; $('play').innerHTML = state.playing ? `${PAUSE_SVG}Pause` : `${PLAY_SVG}Play`; $('play').classList.toggle('on', state.playing); };
 $('now').onclick = () => { state.offsetH = 0; $('time').value = 0; };
 
 function setSpin(on) { controls.autoRotate = on; $('spin').checked = on; }
@@ -1291,38 +1461,58 @@ const apxs = {
   views: [], view: null, slotColors: [], otherColor: '#898781', group: null,
   points: null, pos: null, sizes: null, vis: null, trav: {}, badges: [], regions: [], hlRegion: null,
   hiddenGroups: new Set(), showOther: true, rovers: new Set(Object.keys(ROVER_COLOR)),
-  highlight: new Set(), selected: null, picking: false, you: null, youObj: null, pins: [], selLabel: null,
+  highlight: new Set(), selected: null, picking: false, you: null, pins: [], selLabel: null,
 };
 const okJson = (r) => { if (!r.ok) throw new Error(`${r.status} ${r.statusText}`); return r.json(); };
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const post = (msg) => { if (EMBED) window.parent.postMessage(msg, location.origin); };
 if (EMBED) { document.body.classList.add('embed'); $('controls').classList.add('collapsed'); }
 
+/* Overlays (rock dots, traverse lines) are draped exactly on the terrain height and lifted in the shader by a
+   small, altitude-dependent amount: just enough to sit on top of the surface, never enough to float and slide
+   (parallax) when the camera moves. They are depth-tested, so hills hide what is behind them. */
+const LIFT_MIN = 0.03 / R_KM;                                   // 30 m
+const overlayLift = { value: LIFT_MIN };
 const apxsMat = new THREE.ShaderMaterial({
-  uniforms: { uScale: { value: 1 }, uHorizon: { value: 1 } },
+  uniforms: { uScale: { value: 1 }, uHorizon: { value: 1 }, uLift: overlayLift },
   vertexShader: `
+    #include <common>
+    #include <logdepthbuf_pars_vertex>
     attribute vec3 aColor; attribute float aSize; attribute float aVis;
-    uniform float uScale; uniform float uHorizon;
+    uniform float uScale; uniform float uHorizon; uniform float uLift;
     varying vec3 vColor; varying float vAlpha; varying float vSize;
     void main() {
+      vec3 up = normalize(position);
       float cd = length(cameraPosition);
-      float facing = dot(normalize(position), cameraPosition / cd) - uHorizon / cd;
+      float facing = dot(up, cameraPosition / cd) - uHorizon / cd;
       vAlpha = aVis * smoothstep(-0.0004, 0.0015, facing);
       vColor = aColor; vSize = aSize;
-      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position + up * uLift, 1.0);
       gl_PointSize = vAlpha > 0.0 ? aSize * uScale : 0.0;
+      #include <logdepthbuf_vertex>
     }`,
   fragmentShader: `
+    #include <logdepthbuf_pars_fragment>
     varying vec3 vColor; varying float vAlpha; varying float vSize;
     void main() {
+      #include <logdepthbuf_fragment>
       vec2 c = gl_PointCoord * 2.0 - 1.0; float r = length(c);
       if (r > 1.0 || vAlpha <= 0.0) discard;
       float ring = smoothstep(0.58, 0.7, r);
       vec3 rim = vSize > 10.0 ? vec3(1.0) : vec3(0.05);
       gl_FragColor = vec4(mix(vColor, rim, ring), vAlpha * smoothstep(1.0, 0.82, r));
     }`,
-  transparent: true, depthTest: false, depthWrite: false,
+  transparent: true, depthTest: true, depthWrite: false,
 });
+// traverse lines get the same lift through a one-line shader patch
+function liftMaterial(m) {
+  m.onBeforeCompile = (sh) => {
+    sh.uniforms.uLift = overlayLift;
+    sh.vertexShader = 'uniform float uLift;\n' + sh.vertexShader.replace('#include <begin_vertex>',
+      'vec3 transformed = position + normalize(position) * uLift;');
+  };
+  return m;
+}
 
 async function loadApxs() {
   let meta, list, trav;
@@ -1360,7 +1550,7 @@ async function loadApxs() {
   for (const [rover, pts] of Object.entries(trav)) {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pts.length * 3), 3));
-    const line = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: ROVER_COLOR[rover] || '#ffffff', transparent: true, opacity: 0.7, depthTest: false }));
+    const line = new THREE.Line(geo, liftMaterial(new THREE.LineBasicMaterial({ color: ROVER_COLOR[rover] || '#ffffff', transparent: true, opacity: 0.75 })));
     line.frustumCulled = false;
     line.renderOrder = 9;
     line.userData = { rover, pts };
@@ -1378,7 +1568,7 @@ async function loadApxs() {
     obj.center.set(0.5, 1.3);
     obj.position.copy(toVec(s.lat, s.lon, R * 1.002));
     scene.add(obj);
-    apxs.badges.push({ rover, obj, dir: toVec(s.lat, s.lon, 1) });
+    apxs.badges.push({ rover, obj, el, html: el.innerHTML, dir: toVec(s.lat, s.lon, 1) });
     const [w, so, e, no] = s.bbox, clat = (so + no) / 2;
     const km = 0.5 * Math.hypot((e - w) * Math.cos(clat * D2R), no - so) * D2R * R_KM + 0.3;
     apxs.regions.push(makeRegion(ROVER_COLOR[rover] || '#ffffff', clat, (w + e) / 2, km));
@@ -1389,6 +1579,7 @@ async function loadApxs() {
   $('apxs-section').hidden = false;
   await loadElementCatalog();
   if (QS.get('element')) setElement(QS.get('element'), +(QS.get('pct') || 75));
+  else if (QS.get('prospects') === '1') setProspects(true);
   $('apxs-count').textContent = `${n.toLocaleString()} measurements by Curiosity, Spirit & Opportunity. Click a point for its chemistry.`;
   apxs.ready = true;
   post({ type: 'rm:ready', apxs: true, count: n });
@@ -1401,23 +1592,23 @@ function drapeApxs() {
   if (!apxs.pos) return;
   const v = new THREE.Vector3();
   apxs.rocks.forEach((r, i) => {
-    toVec(r.lat, r.lon, surfaceR(sampleHeight(r.lat, r.lon)) + 0.00003, v);
+    toVec(r.lat, r.lon, surfaceR(sampleHeight(r.lat, r.lon)), v);
     apxs.pos[i * 3] = v.x; apxs.pos[i * 3 + 1] = v.y; apxs.pos[i * 3 + 2] = v.z;
   });
   apxs.points.geometry.attributes.position.needsUpdate = true;
   for (const line of Object.values(apxs.trav)) {
     const arr = line.geometry.attributes.position.array;
     line.userData.pts.forEach(([lat, lon], i) => {
-      toVec(lat, lon, surfaceR(sampleHeight(lat, lon)) + 0.00002, v);
+      toVec(lat, lon, surfaceR(sampleHeight(lat, lon)), v);
       arr[i * 3] = v.x; arr[i * 3 + 1] = v.y; arr[i * 3 + 2] = v.z;
     });
     line.geometry.attributes.position.needsUpdate = true;
   }
-  if (apxs.you) placeYou();
   apxs.pins.forEach((p) => p.obj.position.copy(rockPos(p.r)));
   if (apxs.selLabel) apxs.selLabel.position.copy(rockPos(apxs.selLabel.userData.r));
+  if (apxs.target) apxs.target.position.copy(rockPos(apxs.target.userData.r));
   for (const r of [...apxs.regions, apxs.hlRegion, ...elem.spots]) if (r) setRegion(r, r.lat, r.lon, r.km);
-  for (const l of elem.labels) l.obj.position.copy(toVec(l.lat, l.lon, groundR(l.lat, l.lon) + 0.0001));
+  for (const l of elem.labels) l.obj.position.copy(toVec(l.lat, l.lon, groundR(l.lat, l.lon) + LIFT_MIN));
 }
 
 const groupOf = (cls) => (apxs.view ? apxs.view.groups.findIndex((g) => g.classes.includes(cls)) : -1);
@@ -1445,10 +1636,11 @@ function setView(id) {
 function applyFilter() {
   if (!apxs.points) return;
   const on = $('show-apxs').checked, rank = new Float32Array(apxs.rocks.length);
+  document.body.classList.toggle('apxs-on', on);
   apxs.rocks.forEach((r, i) => {
     const g = apxs.group[i], hi = apxs.highlight.has(r.id), sel = apxs.selected === r.id;
     const shown = on && apxs.rovers.has(r.rover) && (g >= 0 ? !apxs.hiddenGroups.has(g) : apxs.showOther);
-    apxs.vis[i] = hi || sel || shown ? 1 : 0;
+    apxs.vis[i] = hi || sel ? 1 : shown ? (apxs.selected ? 0.3 : 1) : 0;   // focus: other rocks fade back
     apxs.sizes[i] = sel ? PT.sel : hi ? PT.hi : g >= 0 ? PT.base : PT.other;
     rank[i] = sel ? 3 : hi ? 2 : g >= 0 ? 1 : 0;
   });
@@ -1482,6 +1674,16 @@ function buildLegend() {
   });
   row(apxs.otherColor, apxs.view.id === 'unusual' ? 'Typical basaltic rock & soil' : 'Other measurements', other, true,
     (on) => { apxs.showOther = on; applyFilter(); });
+  // compact colour key on the map itself (the side panel is collapsed when embedded in Regolith)
+  const key = $('map-key');
+  key.innerHTML = '';
+  [...apxs.view.groups.map((g, i) => [apxs.slotColors[i], g.label]),
+   [apxs.otherColor, apxs.view.id === 'unusual' ? 'Typical basalt' : 'Other']].forEach(([c, label]) => {
+    const s = document.createElement('span');
+    s.innerHTML = `<i class="dot" style="background:${c}"></i>`;
+    s.append(label);
+    key.appendChild(s);
+  });
 }
 $('show-apxs').onchange = applyFilter;
 $('apxs-view').onchange = (e) => setView(e.target.value);
@@ -1521,12 +1723,14 @@ async function setElement(key, pct = elem.pct, { notify = true } = {}) {
   if (!key) {
     elem.key = null; elem.data = null;
     clearElementLayers();
+    apxs.badges.forEach((b) => { b.el.innerHTML = b.html; b.obj.userData.w = 0; });
     document.body.classList.remove('elem-on');
     $('elem-panel').style.display = 'none';
     if (apxs.view) setView(apxs.view.id);
     return;
   }
   elem.key = key;
+  if (prosp.on) setProspects(false);
   let d;
   try { d = await fetch(`${API}/elements/${encodeURIComponent(key)}?pct=${pct}`).then(okJson); }
   catch (e) { $('elem-body').textContent = `Could not load element map: ${e.message}`; return; }
@@ -1552,8 +1756,7 @@ async function setElement(key, pct = elem.pct, { notify = true } = {}) {
     const big = document.createElement('canvas');
     big.width = 1440; big.height = 720;
     const bc = big.getContext('2d');
-    bc.imageSmoothingEnabled = true;
-    bc.imageSmoothingQuality = 'high';
+    bc.imageSmoothingEnabled = false;                      // crisp 5° cells, exactly NASA's bins
     bc.drawImage(small, 0, 0, 1440, 720);
     const tex = new THREE.CanvasTexture(big);
     tex.colorSpace = THREE.SRGBColorSpace;
@@ -1578,14 +1781,16 @@ async function setElement(key, pct = elem.pct, { notify = true } = {}) {
     apxs.showOther = true;
     applyFilter();
     a.hotspots.slice(0, 15).forEach((h, i) => {
-      elem.spots.push(makeRegion('#3987e5', h.lat, h.lon, Math.max(h.radius_m / 1000, 0.25)));
+      const spot = makeRegion('#ffffff', h.lat, h.lon, Math.max(h.radius_m / 1000, 0.1));
+      spot.trueSize = true;                                   // a 500 m hotspot must not look like a region from orbit
+      elem.spots.push(spot);
       if (i < 6) {
         const el = document.createElement('div');
         el.className = 'hot-label';
         el.textContent = `${fmtV(h.max, a.unit)} ${a.field} · ${h.top_name}`;
         const obj = new CSS2DObject(el);
         obj.center.set(0.5, 1.6);
-        obj.position.copy(toVec(h.lat, h.lon, groundR(h.lat, h.lon) + 0.0001));
+        obj.position.copy(toVec(h.lat, h.lon, groundR(h.lat, h.lon) + LIFT_MIN));
         scene.add(obj);
         elem.labels.push({ obj, lat: h.lat, lon: h.lon });
       }
@@ -1593,6 +1798,11 @@ async function setElement(key, pct = elem.pct, { notify = true } = {}) {
   } else if (apxs.view) {
     setView(apxs.view.id);                                    // Th / H2O: no rover data, keep normal colours
   }
+  apxs.badges.forEach((b) => {
+    const s = d.sites?.find((x) => x.rover === b.rover);
+    b.el.innerHTML = s?.apxs ? `<b>${esc(b.rover)}</b> · ${s.apxs.n_high.toLocaleString()} high ${esc(d.apxs.field)}` : b.html;
+    b.obj.userData.w = 0;                                     // re-measure for label declutter
+  });
   renderElementPanel(d);
 }
 
@@ -1605,20 +1815,23 @@ function renderElementPanel(d) {
     const g = d.grs;
     add(`<div class="src"><b>Orbit · Mars Odyssey GRS</b> (${esc(d.key)}, ${esc(g.unit)})
       <div class="ramp"></div><div class="ramp-l"><span>${fmtV(g.threshold, g.unit)}</span><span>${fmtV(g.max, g.unit)}</span></div>
-      ${g.n_high.toLocaleString()} of ${g.n.toLocaleString()} 5° cells are at or above ${fmtV(g.threshold, g.unit)} (median ${fmtV(g.median, g.unit)}).
-      Each cell averages ~300 km and the top few tens of cm, measured 2002–2005.
-      ${g.lat_range[1] < 80 ? `No data poleward of ${Math.abs(g.lat_range[0]) + 2.5}°.` : ''}
-      <a href="${esc(g.url)}" target="_blank" rel="noopener">NASA PDS dataset ↗</a></div>`);
+      <div class="more">Shaded: ${g.n_high.toLocaleString()} of ${g.n.toLocaleString()} 5° cells at or above ${fmtV(g.threshold, g.unit)} (median ${fmtV(g.median, g.unit)}).
+      Each value is NASA's 10° moving average (~600 km across at the equator) of roughly the top few tens of cm,
+      measured June 2002 – April 2005.
+      ${g.data_edge && g.data_edge.north[0] < 85 ? `No data near the poles: NASA masks this element where water ice dilutes the signal
+        (data stop between ${g.data_edge.north[0]}° and ${g.data_edge.north[1]}°N, ${-g.data_edge.south[0]}° and ${-g.data_edge.south[1]}°S).` : ''}
+      <a href="${esc(g.url)}" target="_blank" rel="noopener">NASA PDS dataset</a>
+      ${g.browse ? ` · <a href="${esc(g.browse)}" target="_blank" rel="noopener">NASA's own maps</a>` : ''}</div></div>`);
   } else {
-    add(`<div class="src">No orbital map for ${esc(d.label.toLowerCase())}: Odyssey GRS mapped Cl, Fe, Si, K, Th and H only.</div>`);
+    add(`<div class="src">No orbital map for ${esc(d.label.toLowerCase())}: this NASA Odyssey GRS dataset maps Cl, Fe, Si, K, Th and H2O only.</div>`);
   }
   if (d.apxs) {
     const a = d.apxs;
     add(`<div class="src"><b>Rocks · APXS</b> (${esc(a.field)}, ${esc(a.unit)})
       <div class="ramp"></div><div class="ramp-l"><span>${fmtV(a.threshold, a.unit)}</span><span>${fmtV(a.max, a.unit)}</span></div>
-      ${a.n_high.toLocaleString()} of ${a.n.toLocaleString()} measurements at or above ${fmtV(a.threshold, a.unit)} (median ${fmtV(a.median, a.unit)}),
-      in ${a.hotspots.length} hotspot${a.hotspots.length === 1 ? '' : 's'} (≤ ${a.hotspot_m} m). Each APXS spot is ~2 cm of one rock or soil.
-      <div id="hot-list" style="margin-top:6px"></div></div>`);
+      <div class="more">${a.n_high.toLocaleString()} of ${a.n.toLocaleString()} measurements at or above ${fmtV(a.threshold, a.unit)} (median ${fmtV(a.median, a.unit)}),
+      in ${a.hotspots.length} hotspot${a.hotspots.length === 1 ? '' : 's'} (white rings, true size, ≤ ${a.hotspot_m} m). Each APXS spot is ~2 cm of one rock or soil.
+      <div id="hot-list" style="margin-top:6px"></div></div></div>`);
     const list = $('hot-list');
     a.hotspots.slice(0, 6).forEach((h) => {
       const row = document.createElement('div');
@@ -1631,10 +1844,24 @@ function renderElementPanel(d) {
   } else {
     add(`<div class="src">No rover measurements: APXS does not measure ${esc(d.key === 'Th' ? 'thorium' : 'hydrogen')}.</div>`);
   }
-  if (d.key === 'Fe') add(`<div class="src">Units differ: GRS reports elemental Fe; APXS reports FeO (Fe = 0.777 × FeO).</div>`);
-  if (d.key === 'Si') add(`<div class="src">Units differ: GRS reports elemental Si; APXS reports SiO2 (Si = 0.467 × SiO2).</div>`);
-  if (d.key === 'K') add(`<div class="src">Units differ: GRS reports elemental K; APXS reports K2O (K = 0.830 × K2O).</div>`);
-  if (d.key === 'S') add(`<div class="src">APXS reports all sulfur as SO3 — including elemental sulfur rocks like Convict Lake.</div>`);
+  if (d.sites?.length && (d.grs || d.apxs)) {
+    const SITE = { Curiosity: 'Gale crater', Spirit: 'Gusev crater', Opportunity: 'Meridiani Planum' };
+    const ord = (n) => `${n}${[, 'st', 'nd', 'rd'][n % 100 > 10 && n % 100 < 14 ? 0 : n % 10] || 'th'}`;
+    const rows = d.sites.map((s) => {
+      const o = s.grs ? `orbit ${fmtV(s.grs.value, d.grs.unit)}${s.grs.sigma != null ? ` ± ${s.grs.sigma}` : ''} (${ord(s.grs.percentile)} percentile${s.grs.high ? ', shaded' : ', not shaded'})`
+        : d.grs ? 'orbit: masked' : '';
+      const r = s.apxs ? `rover: ${s.apxs.n_high.toLocaleString()} of ${s.apxs.n.toLocaleString()} readings high (median ${fmtV(s.apxs.median, d.apxs.unit)})` : '';
+      return `<div class="site-row"><b>${esc(SITE[s.rover] || s.rover)}</b> <span class="dim">(${esc(s.rover)})</span><br>${[o, r].filter(Boolean).join('<br>')}</div>`;
+    }).join('');
+    add(`<div class="src more"><b>At the rover sites</b>${rows}
+      ${d.grs && d.apxs ? `<div class="dim" style="margin-top:6px">Orbit and rover measure different things: the blue shading is a ~600 km
+      average of the surface layer, while each rover reading is one 2 cm spot. Rovers have visited only these three sites,
+      so most shaded areas have no rover data, and salty rocks can sit inside an average region.</div>` : ''}</div>`);
+  }
+  if (d.key === 'Fe') add(`<div class="src more">Units differ: GRS reports elemental Fe; APXS reports FeO (Fe = 0.777 × FeO).</div>`);
+  if (d.key === 'Si') add(`<div class="src more">Units differ: GRS reports elemental Si; APXS reports SiO2 (Si = 0.467 × SiO2).</div>`);
+  if (d.key === 'K') add(`<div class="src more">Units differ: GRS reports elemental K; APXS reports K2O (K = 0.830 × K2O).</div>`);
+  if (d.key === 'S') add(`<div class="src more">APXS reports all sulfur as SO3. Readings like Convict Lake (88 wt% as SO3 with almost no calcium or magnesium) point to elemental sulfur.</div>`);
   $('elem-panel').style.display = 'block';
 }
 function grsAt(lat, lon) {
@@ -1649,11 +1876,11 @@ $('elem-close').onclick = () => setElement(null);
 function setElemMin(min) {
   $('elem-panel').classList.toggle('min', min);
   $('elem-min').textContent = min ? '+' : '–';
-  $('elem-min').title = min ? 'Expand panel' : 'Collapse panel';
+  $('elem-min').title = min ? 'Show details' : 'Show legend only';
   $('elem-min').setAttribute('aria-expanded', String(!min));
 }
 $('elem-min').onclick = () => setElemMin(!$('elem-panel').classList.contains('min'));
-if (matchMedia('(max-width:700px)').matches) setElemMin(true);   // phones: keep the globe visible
+if (EMBED || matchMedia('(max-width:700px)').matches) setElemMin(true);   // inside Regolith and on phones: keep the globe visible
 document.querySelectorAll('[data-site]').forEach((b) => (b.onclick = () => flyToSite(b.dataset.site)));
 
 const groundR = (lat, lon) => surfaceR(sampleHeight(lat, lon));
@@ -1684,12 +1911,19 @@ function makeRegion(color, lat, lon, km) {
 }
 function setRegion(r, lat, lon, km) {
   Object.assign(r, { lat, lon, km, dir: toVec(lat, lon, 1) });
-  r.g.position.copy(toVec(lat, lon, groundR(lat, lon) + 0.00003));    // ~100 m up: drawn without depth test, so only parallax matters
+  r.g.position.copy(toVec(lat, lon, groundR(lat, lon) + LIFT_MIN));   // on the ground: no parallax when the camera moves
   r.g.lookAt(r.g.position.clone().multiplyScalar(2));      // circle faces straight up from the surface
 }
 function updateRegion(r, alt, camN, cosH) {
   r.g.visible = r.show && $('show-regions').checked && r.dir.dot(camN) > cosH;
   if (!r.g.visible) return;
+  if (r.trueSize) {                                        // real extent, outline only; hidden once sub-pixel
+    r.g.visible = alt < r.km * 400;
+    r.g.scale.setScalar(r.km / R_KM);
+    r.fill.material.opacity = 0;
+    r.ring.material.opacity = 0.9;
+    return;
+  }
   r.g.scale.setScalar(Math.max(r.km, alt * 0.03) / R_KM);
   const out = clamp((alt / Math.max(r.km, 1) - 6) / 10, 0, 1);   // 0 = close up (outline only), 1 = far away
   r.fill.material.opacity = 0.3 * out;
@@ -1720,31 +1954,48 @@ function fitTo(ids) {
 }
 
 /* numbered pins for ranked matches + a name label for the selected rock */
-function rockPos(r, lift = 0.00003) { return toVec(r.lat, r.lon, groundR(r.lat, r.lon) + lift); }
+function rockPos(r) { return toVec(r.lat, r.lon, groundR(r.lat, r.lon) + LIFT_MIN); }
 function setPins(ids) {
   apxs.pins.forEach((p) => scene.remove(p.obj));
-  apxs.pins = (ids || []).slice(0, 9).map((id, i) => {
+  // repeat measurements of one target sit metres apart: one pin per spot, listing every match number there
+  const groups = [];
+  (ids || []).slice(0, 9).forEach((id, i) => {
     const r = apxs.rocks[apxs.index.get(id)];
-    if (!r) return null;
+    if (!r) return;
+    const near = groups.find((g) => Math.hypot(g.r.lat - r.lat, (g.r.lon - r.lon) * Math.cos(r.lat * D2R)) * D2R * R_KM < 0.015);
+    if (near) { near.nums.push(i + 1); near.ids.push(id); near.names.push(r.name); }
+    else groups.push({ r, nums: [i + 1], ids: [id], names: [r.name] });
+  });
+  apxs.pins = groups.map((g) => {
     const el = document.createElement('div');
     el.className = 'pin';
-    el.textContent = String(i + 1);
-    el.title = r.name;
-    el.addEventListener('pointerdown', (e) => e.stopPropagation());
-    el.onclick = (e) => { e.stopPropagation(); selectRock(id, { info: !EMBED }); post({ type: 'rm:rock', id }); };
+    el.innerHTML = `<span class="pin-head${g.nums.length > 1 ? ' multi' : ''}">${g.nums.join(',')}</span><span class="pin-stem"></span>`;
+    el.title = g.nums.map((n, k) => `${n}. ${g.names[k]}`).join('\n');
+    const head = el.firstElementChild, id = g.ids[0];
+    head.addEventListener('pointerdown', (e) => e.stopPropagation());
+    head.onclick = (e) => { e.stopPropagation(); selectRock(id, { info: !EMBED }); post({ type: 'rm:rock', id }); };
     const obj = new CSS2DObject(el);
-    obj.center.set(0.5, 1.25);
-    obj.position.copy(rockPos(r));
+    obj.center.set(0.5, 1);                                   // stem tip sits exactly on the rock
+    obj.position.copy(rockPos(g.r));
     scene.add(obj);
-    return { obj, el, r, id };
-  }).filter(Boolean);
+    return { obj, el, r: g.r, id, ids: g.ids };
+  });
   markSelected();
 }
 function markSelected() {
-  apxs.pins.forEach((p) => p.el.classList.toggle('sel', p.id === apxs.selected));
+  apxs.pins.forEach((p) => p.el.classList.toggle('sel', p.ids.includes(apxs.selected)));
   if (apxs.selLabel) { scene.remove(apxs.selLabel); apxs.selLabel = null; }
+  if (apxs.target) { scene.remove(apxs.target); apxs.target = null; }
   const r = apxs.selected && apxs.rocks[apxs.index.get(apxs.selected)];
   if (!r) return;
+  const t = document.createElement('div');
+  t.className = 'target';
+  t.innerHTML = '<i></i>';
+  apxs.target = new CSS2DObject(t);
+  apxs.target.center.set(0.5, 0.5);
+  apxs.target.position.copy(rockPos(r));
+  apxs.target.userData.r = r;
+  scene.add(apxs.target);
   const el = document.createElement('div');
   el.className = 'sel-label';
   el.textContent = r.name;
@@ -1752,7 +2003,7 @@ function markSelected() {
   sm.textContent = `${r.rover} · sol ${r.sol}`;
   el.append(sm);
   apxs.selLabel = new CSS2DObject(el);
-  apxs.selLabel.center.set(0.5, -0.6);
+  apxs.selLabel.center.set(0, 0.5);                       // to the right of the target ring
   apxs.selLabel.position.copy(rockPos(r));
   apxs.selLabel.userData.r = r;
   scene.add(apxs.selLabel);
@@ -1768,6 +2019,15 @@ function selectRock(id, { fly = false, info: showPanel = !EMBED } = {}) {
   if (fly) flyTo(r.lat, r.lon, groundR(r.lat, r.lon) + 3 / R_KM);
   if (showPanel) showRockInfo(r);
 }
+
+function clearSelection() {
+  apxs.selected = null;
+  applyFilter();
+  markSelected();
+}
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && apxs.selected) { clearSelection(); info.style.display = 'none'; post({ type: 'rm:rock', id: null }); }
+});
 
 async function showRockInfo(r) {
   const cls = { ...(apxs.classById.get(r.deposit) || { label: r.deposit }), color: colorOf(r.deposit) };
@@ -1789,7 +2049,7 @@ async function showRockInfo(r) {
       <table class="chem">${rows}</table>
       <div class="photos" id="info-photos"><span class="note">Loading rover photos…</span></div>
       ${sim ? `<div class="note">Most similar: ${sim}</div>` : ''}
-      <a class="cta" href="/?rock=${encodeURIComponent(r.id)}" target="_top">Open in Regolith →</a>`;
+      <a class="cta" href="/?rock=${encodeURIComponent(r.id)}" target="_top">Open in Regolith</a>`;
     $('info-body').querySelectorAll('a[data-id]').forEach((a) => {
       a.onclick = (e) => { e.preventDefault(); selectRock(a.dataset.id, { fly: true }); };
     });
@@ -1804,18 +2064,8 @@ async function showRockInfo(r) {
   }
 }
 
-function setYou(lat, lon) {
-  apxs.you = { lat, lon };
-  if (!apxs.youObj) {
-    const el = document.createElement('div');
-    el.className = 'you';
-    el.innerHTML = '<span></span>You';
-    apxs.youObj = new CSS2DObject(el);
-    scene.add(apxs.youObj);
-  }
-  placeYou();
-}
-function placeYou() { toVec(apxs.you.lat, apxs.you.lon, groundR(apxs.you.lat, apxs.you.lon) + 0.00003, apxs.youObj.position); }
+// The reading's position is kept (Regolith measures distances from it) but not drawn on the map.
+function setYou(lat, lon) { apxs.you = { lat, lon }; }
 function setPicking(on) { apxs.picking = on; document.body.classList.toggle('picking', on); }
 
 // screen-space pick of the nearest visible measurement
@@ -1859,14 +2109,178 @@ function updateApxs() {
     line.visible = showTrav && !!s && alt < 4000 && toVec(s.lat, s.lon).dot(camN) > cosH;
   }
   for (const b of apxs.badges) b.obj.visible = alt > 350 && b.dir.dot(camN) > cosH + 0.2 * (1 - cosH);
-  for (const r of [...apxs.regions, apxs.hlRegion, ...elem.spots]) if (r) updateRegion(r, alt, camN, cosH);
+  // in element mode the enlarged rover-site circles would read as element shading, so only the badges mark the sites
+  for (const r of apxs.regions) { if (elem.key || prosp.on) r.g.visible = false; else updateRegion(r, alt, camN, cosH); }
+  for (const r of [apxs.hlRegion, ...elem.spots]) if (r) updateRegion(r, alt, camN, cosH);
   for (const l of elem.labels) l.obj.visible = alt < 700 && l.obj.position.clone().normalize().dot(camN) > cosH;
   if (elem.overlay) elem.overlay.material.opacity = clamp((alt - 60) / 500, 0.15, 1);
-  if (apxs.youObj) apxs.youObj.visible = apxs.youObj.position.clone().normalize().dot(camN) > cosH;
   const near = alt < 1500;
   for (const p of apxs.pins) p.obj.visible = near && p.obj.position.clone().normalize().dot(camN) > cosH;
   if (apxs.selLabel) apxs.selLabel.visible = alt < 800 && apxs.selLabel.position.clone().normalize().dot(camN) > cosH;
+  if (apxs.target) apxs.target.visible = alt < 3000 && apxs.target.position.clone().normalize().dot(camN) > cosH;
+  for (const l of prosp.labels) l.obj.visible = alt > 150 && prosp.show.has(l.kind) && l.dir.dot(camN) > cosH + 0.15 * (1 - cosH);
 }
+
+/* =====================================================================
+   Prospect zones: where a deposit type is likely, judged from NASA orbital data only
+   (Mars Odyssey GRS element maps + MGS MOLA elevation, NASA's 5° cells). Rover data is ground truth only.
+   ===================================================================== */
+const PLAY_SVG = '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16l13-8z"/></svg>', PAUSE_SVG = '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5v14M16 5v14"/></svg>';
+const ZONE_COLORS = { salt: '#9085e9', water: '#1a9fb3', potassium: '#0ca30c' };   // validated all-pairs, dark mode
+const prosp = { on: false, data: null, show: new Set(Object.keys(ZONE_COLORS)), meshes: {}, labels: [], sel: null, cellKinds: null };
+const cellKey = (lat, lon) => `${clamp(Math.floor((wrap180(lon) + 180) / 5), 0, 71)},${clamp(Math.floor((90 - lat) / 5), 0, 35)}`;
+const fmtN = (v) => Math.round(v).toLocaleString();
+function placesIn(cells) {
+  const keys = new Set(cells.map(([la, lo]) => cellKey(la, lo)));
+  return [...SITES.map((p) => ({ ...p, name: `${p.name.replace(/ \(.*\)/, '')} landing site` })), ...FEATURES]
+    .filter((p) => keys.has(cellKey(p.lat, p.lon))).map((p) => p.name);
+}
+function clearProspects() {
+  Object.values(prosp.meshes).forEach((m) => { scene.remove(m); m.material.map.dispose(); m.material.dispose(); });
+  prosp.labels.forEach((l) => scene.remove(l.obj));
+  prosp.meshes = {}; prosp.labels = []; prosp.cellKinds = null; prosp.sel = null;
+}
+async function setProspects(on, { notify = true } = {}) {
+  prosp.on = on;
+  $('show-prospects').checked = on;
+  document.body.classList.toggle('prosp-on', on);
+  if (notify) post({ type: 'rm:prospects', on });
+  clearProspects();
+  if (!on) { $('zone-panel').style.display = 'none'; return; }
+  if (elem.key) setElement(null);
+  if (!prosp.data) {
+    try { prosp.data = await fetch(`${API}/prospects`).then(okJson); }
+    catch (e) { $('zone-body').textContent = `Could not load prospect zones: ${e.message}`; $('zone-panel').style.display = 'block'; return; }
+  }
+  if (!prosp.on) return;
+  prosp.check = prosp.data.ground_check;
+  buildProspects();
+  renderZonePanel();
+}
+function buildProspects() {
+  prosp.cellKinds = new Map();
+  const C = 20, W = 72 * C, H = 36 * C;
+  Object.entries(prosp.data.kinds).forEach(([kind, k], ki) => {
+    const col = ZONE_COLORS[kind] || '#ffffff', mine = new Set();
+    k.zones.forEach((z, zi) => z.cells.forEach(([la, lo]) => {
+      const key = cellKey(la, lo);
+      mine.add(key);
+      if (!prosp.cellKinds.has(key)) prosp.cellKinds.set(key, []);
+      prosp.cellKinds.get(key).push({ kind, zi });
+    }));
+    // NASA's 5° cells, filled, with a solid outline round each zone so it reads from orbit
+    const cv = document.createElement('canvas');
+    cv.width = W; cv.height = H;
+    const g = cv.getContext('2d');
+    g.fillStyle = col; g.globalAlpha = 0.4;
+    for (const key of mine) { const [x, y] = key.split(',').map(Number); g.fillRect(x * C, y * C, C, C); }
+    g.globalAlpha = 1; g.strokeStyle = col; g.lineWidth = 5; g.lineCap = 'square';
+    g.beginPath();
+    for (const key of mine) {
+      const [x, y] = key.split(',').map(Number);
+      if (!mine.has(`${x},${y - 1}`)) { g.moveTo(x * C, y * C); g.lineTo((x + 1) * C, y * C); }
+      if (!mine.has(`${x},${y + 1}`)) { g.moveTo(x * C, (y + 1) * C); g.lineTo((x + 1) * C, (y + 1) * C); }
+      if (!mine.has(`${(x + 71) % 72},${y}`)) { g.moveTo(x * C, y * C); g.lineTo(x * C, (y + 1) * C); }
+      if (!mine.has(`${(x + 1) % 72},${y}`)) { g.moveTo((x + 1) * C, y * C); g.lineTo((x + 1) * C, (y + 1) * C); }
+    }
+    g.stroke();
+    const tex = new THREE.CanvasTexture(cv);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    const mesh = new THREE.Mesh(new THREE.SphereGeometry(R * (1.0006 + 0.0002 * ki), 144, 72),
+      new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthTest: false, depthWrite: false, toneMapped: false }));
+    mesh.renderOrder = 6 + ki;
+    mesh.visible = prosp.show.has(kind);
+    scene.add(mesh);
+    prosp.meshes[kind] = mesh;
+    // big labels on every zone of 3+ cells (and always the largest), readable from the full-planet view
+    k.zones.forEach((z, zi) => {
+      if (z.n_cells < 3 && zi > 0) return;
+      const el = document.createElement('div');
+      el.className = 'zone-label';
+      el.style.setProperty('--c', col);
+      const inside = z.ground.map((gr) => gr.site);
+      el.innerHTML = `${esc(k.short)}<small>${inside.length ? `incl. ${esc(inside.join(' & '))}` : `${(z.area_km2 / 1e6).toFixed(1)} million km² · not yet visited`}</small>`;
+      el.addEventListener('pointerdown', (e) => e.stopPropagation());
+      el.onclick = (e) => { e.stopPropagation(); prosp.sel = { kind, zi }; renderZonePanel(); };
+      const obj = new CSS2DObject(el);
+      obj.center.set(0.5, 0.5);
+      obj.position.copy(toVec(z.lat, z.lon, R * 1.003));
+      scene.add(obj);
+      prosp.labels.push({ obj, el, kind, zi, area: z.area_km2, dir: toVec(z.lat, z.lon, 1) });
+    });
+  });
+  prosp.labels.sort((a, b) => b.area - a.area);             // bigger zones win label space, whatever their kind
+}
+/* Predictions (estimates): soil an APXS would likely read, and water you could extract, from orbit */
+function predictedHtml(soil, water, unvisited) {
+  const err = prosp.check?.error_pct || {};
+  let html = '';
+  if (water) html += `<p><b>Water you could extract</b> <span class="est">estimate</span><br>
+    <span class="wbig">about ${water.practical_l_t ?? water.upper_l_t} L</span> per tonne of soil${water.practical_l_t != null ? ` <span class="dim">(up to ${water.upper_l_t} L if all released)</span>` : ''}.
+    <span class="dim">From ${(+water.h2o_wt).toFixed(1)} wt% water-equivalent hydrogen (1 wt% = 10 L per tonne); practical share as released when Curiosity's SAM heated Gale soil (2 wt% of ${(+water.gale_h2o_wt || 0).toFixed(1)}).</span></p>`;
+  if (soil && Object.keys(soil).length) html += `<p><b>Soil an APXS would likely read${unvisited ? ' (no rover has been here)' : ''}</b> <span class="est">from orbit</span><br>
+    ${Object.entries(soil).map(([ox, v]) => `<span class="soilv"><b>${ox}</b> ${v} wt%${err[ox] != null ? ` <span class="dim">±${err[ox]}%</span>` : ''}</span>`).join(' ')}
+    <br><span class="dim">Odyssey Fe, Si, K, Cl as oxides; ± is the largest miss against the rovers' own soils at the three landing sites.</span></p>`;
+  return html;
+}
+async function showForecast(lat, lon) {
+  let f;
+  try { f = await fetch(`${API}/forecast?lat=${lat.toFixed(4)}&lon=${lon.toFixed(4)}`).then(okJson); } catch { return; }
+  prosp.check = f.ground?.check || prosp.check;
+  prosp.sel = null;
+  renderZonePanel();
+  const near = f.nearby
+    ? `<p><b>If you sample a rock within 1 km</b> <span class="est">estimate</span><br>${f.nearby.odds.slice(0, 4).map((o) => `${esc(o.label)} ${o.pct}%`).join(' · ')}
+       <br><span class="dim">From ${f.nearby.n} rover measurements nearby, closer ones counting more.${f.nearby.skill ? ` In a hold-out test the top prediction was right ${Math.round(f.nearby.skill.top1_pct)}% of the time (always guessing basalt: ${Math.round(f.nearby.skill.baseline_pct)}%).` : ''} ${esc(f.nearby.caveat)}</span></p>`
+    : '<p class="dim">No rover measurements within 1 km, so no local rock prediction here.</p>';
+  $('zone-body').insertAdjacentHTML('beforeend', `<div class="src zone-detail">
+    <div class="zt">Forecast for ${fmtLL(lat, lon)}</div>
+    ${f.zones.length ? `<p>Inside: ${f.zones.map((z) => esc(z.label)).join(', ')} zone</p>` : '<p class="dim">Not inside a prospect zone.</p>'}
+    ${predictedHtml(f.ground?.predicted, f.water, !f.nearby)}${near}
+    <p class="dim">Click anywhere on the planet for a forecast.</p></div>`);
+}
+function renderZonePanel() {
+  const d = prosp.data, p = $('zone-body');
+  const links = d.links || {};
+  let html = `<h3>Prospect zones · judged from orbit</h3>
+    <div class="src" style="border:0;margin:0;padding:0">Where these deposits are <i>likely</i>, using only NASA orbital data<span class="zlong">:
+    Mars Odyssey GRS element maps and MOLA elevation, on NASA's 5° cells (~300 km)</span>. Click a zone label for the reasons,
+    or anywhere on the planet for a forecast.</div>`;
+  html += '<div class="src">' + Object.entries(d.kinds).map(([kind, k]) =>
+    `<label class="zkind" title="${esc(k.rule)}"><input type="checkbox" data-kind="${kind}"${prosp.show.has(kind) ? ' checked' : ''}>
+      <span class="zswatch" style="--c:${ZONE_COLORS[kind]}"></span>
+      <span><b>${esc(k.label)}</b> <span class="dim">· ${k.zones.length} zone${k.zones.length === 1 ? '' : 's'}</span><span class="zrule"><br><span class="dim">${esc(k.rule)}</span></span></span></label>`).join('') + '</div>';
+  if (prosp.sel) {
+    const k = d.kinds[prosp.sel.kind], z = k.zones[prosp.sel.zi], el = { Cl: 'chlorine', H2O: 'water-equivalent hydrogen', K: 'potassium' }[k.grs] || k.grs;
+    const places = placesIn(z.cells);
+    const ground = z.ground.length
+      ? z.ground.map((g) => `<p><span class="ok-mark">Confirmed</span> <b>${esc(g.site)}</b> (${esc(g.rover)}): ${fmtN(g.n_related)} of ${fmtN(g.n)} rover readings here are
+          ${esc(g.related.join(', ') || 'related deposit types')}${g.n_related ? '' : ' (none of the related types)'}.</p>`).join('')
+      : '<p>No rover has measured rocks inside this zone, so it is an untested prediction.</p>';
+    html += `<div class="src zone-detail" style="--c:${ZONE_COLORS[prosp.sel.kind]}">
+      <div class="zt"><span class="zswatch" style="--c:${ZONE_COLORS[prosp.sel.kind]};display:inline-block;vertical-align:-2px;margin-right:6px"></span>${esc(k.short)} zone</div>
+      ${places.length ? `<p class="dim">Includes ${esc(places.join(', '))}</p>` : ''}
+      <p><b>Why here:</b> ${esc(k.why)}</p>
+      <p><b>The numbers:</b> mean ${el} ${z.mean} ${esc(k.unit)} (top-15% cut-off ${k.threshold} ${esc(k.unit)}; highest cell ${z.max})${k.elev_median_m != null
+        ? `; mean elevation ${fmtN(z.elev_m)} m vs the planet's median ${fmtN(k.elev_median_m)} m` : ''}. ${z.n_cells} cells ≈ ${(z.area_km2 / 1e6).toFixed(1)} million km².</p>
+      ${predictedHtml(z.predicted_soil, z.water, !z.ground.length)}
+      <p><b>Ground truth:</b></p>${ground}
+      <p class="dim">Each cell is NASA's ~600 km moving average of roughly the top few tens of cm, so a zone marks where to look, not a confirmed deposit.</p>
+      <p>${links[prosp.sel.kind] ? `<a href="${esc(links[prosp.sel.kind].url)}" target="_blank" rel="noopener">${esc(links[prosp.sel.kind].title)}</a><br>` : ''}
+      <a href="https://pds-geosciences.wustl.edu/ody/ody-m-grs-5-elements-v1/" target="_blank" rel="noopener">NASA PDS: Odyssey GRS element maps</a><br>
+      <a href="https://trek.nasa.gov/mars/" target="_blank" rel="noopener">NASA Mars Trek: MOLA elevation</a></p></div>`;
+  }
+  p.innerHTML = html;
+  p.querySelectorAll('input[data-kind]').forEach((cb) => (cb.onchange = () => {
+    cb.checked ? prosp.show.add(cb.dataset.kind) : prosp.show.delete(cb.dataset.kind);
+    if (prosp.meshes[cb.dataset.kind]) prosp.meshes[cb.dataset.kind].visible = cb.checked;
+  }));
+  prosp.labels.forEach((l) => l.el.classList.toggle('sel', !!prosp.sel && l.kind === prosp.sel.kind && l.zi === prosp.sel.zi));
+  $('zone-panel').style.display = 'block';
+}
+$('show-prospects').onchange = (e) => setProspects(e.target.checked);
+$('zone-close').onclick = () => setProspects(false);
 
 /* Label declutter: labels claim their screen box in priority order, and one that would overlap a box
    already claimed is hidden for this frame. Sizes are measured once (label text never changes). */
@@ -1893,9 +2307,15 @@ function declutterLabels() {
     if (!r) return;
     if (hit(r)) obj.visible = false; else taken.push(r);
   };
-  apxs.pins.forEach((p) => block(p.obj));                     // match pins and "you" are never hidden
-  block(apxs.youObj);
-  claim(apxs.selLabel);
+  block(apxs.target);                                         // the targeted rock, its name and the match pins
+  block(apxs.selLabel);                                       // are never hidden
+  apxs.pins.forEach((p) => block(p.obj));
+  // focus: while a rock is targeted up close, only it, its label and the numbered matches are labelled
+  const focus = apxs.selected && altitudeU() * R_KM < 400;
+  const others = [...elem.labels.map((l) => l.obj), ...prosp.labels.map((l) => l.obj), ...apxs.badges.map((b) => b.obj),
+                  ...markers.map((m) => m.userData.label)];
+  if (focus) { others.forEach((o) => (o.visible = false)); return; }
+  prosp.labels.forEach((l) => claim(l.obj));                  // biggest zones first
   elem.labels.forEach((l) => claim(l.obj));                   // hotspots in rank order
   apxs.badges.forEach((b) => claim(b.obj));
   for (let tier = 0; tier < 4; tier++) for (const m of markers) if (m.userData.tier === tier) claim(m.userData.label);
@@ -1903,6 +2323,7 @@ function declutterLabels() {
 
 window.addEventListener('message', (e) => {
   if (e.origin !== location.origin || !e.data || typeof e.data.type !== 'string') return;
+  wake();
   const m = e.data;
   if (m.type === 'rm:highlight') {
     apxs.highlight = new Set(m.ids || []);
@@ -1920,8 +2341,10 @@ window.addEventListener('message', (e) => {
     applyFilter();
   } else if (m.type === 'rm:pick-position') setPicking(true);
   else if (m.type === 'rm:set-position') setYou(m.lat, m.lon);
-  else if (m.type === 'rm:clear') { apxs.highlight.clear(); apxs.selected = null; applyFilter(); setPins([]); showHighlightRegion(null); }
+  else if (m.type === 'rm:clear') { apxs.highlight.clear(); clearSelection(); setPins([]); showHighlightRegion(null); }
+  else if (m.type === 'rm:prospects') setProspects(!!m.on, { notify: false });
   else if (m.type === 'rm:element') setElement(m.key || null, m.pct || elem.pct, { notify: false });
+  else if (m.type === 'rm:visible') { paused = !m.on; wake(); }
   else if (m.type === 'rm:ping') post({ type: 'rm:ready', apxs: apxs.ready, count: apxs.rocks.length });
 });
 
@@ -1954,10 +2377,31 @@ if (params.get('sun') === 'lit' || (params.get('embed') === '1' && params.get('s
 onExag();
 setLayer();
 loadApxs();
-if (QS.get('debug') === '1') window.__globe = { queue, inflight, imgCache, live, roots, apxs, elem, camera, state, demCache, get active() { return active; } };
+if (QS.get('debug') === '1') window.__globe = { queue, inflight, imgCache, live, roots, apxs, elem, camera, state, demCache, globe, THREE, controls, get active() { return active; } };
 
-let frame = 0, last = performance.now();
+let frame = 0, last = performance.now(), drapeDue = false, zoomTo = null;
+// Wheel and trackpad zoom: proportional to how far the wheel actually turned (a trackpad sends dozens of tiny
+// events per gesture), eased over a few frames, and never closer than the minimum altitude.
+window.addEventListener('wheel', (e) => {
+  if (e.target !== renderer.domElement) return;
+  e.preventDefault();
+  e.stopImmediatePropagation();                              // OrbitControls would zoom a fixed step per event
+  const px = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaMode === 2 ? e.deltaY * innerHeight : e.deltaY;
+  const k = e.ctrlKey ? 0.006 : 0.0015;                      // pinch-to-zoom arrives as ctrl+wheel with small deltas
+  const from = zoomTo ?? altitudeU();
+  zoomTo = clamp(from * Math.exp(clamp(px, -240, 240) * k), MIN_ALT, controls.maxDistance - localR);
+  flight = null;
+  wake();
+}, { capture: true, passive: false });
+// Render on demand: full rate while anything changes, ~10 fps once the view has been still for 1.5 s,
+// and nothing at all while the map is hidden (Regolith's other tab, background browser tab).
+const camPrev = new Float64Array(16);
+let lastActive = 0, paused = false;
+const wake = () => { lastActive = performance.now(); };
+['pointerdown', 'pointermove', 'wheel', 'keydown', 'touchstart'].forEach((ev) => window.addEventListener(ev, wake, { passive: true }));
+document.addEventListener('visibilitychange', wake);
 renderer.setAnimationLoop((now) => {
+  if (paused || document.hidden) { last = now; return; }
   const dt = Math.min((now - last) / 1000, 0.1); last = now;
   if (state.playing) {
     state.offsetH += dt;           // 1 Mars hour per second
@@ -1978,11 +2422,24 @@ renderer.setAnimationLoop((now) => {
   updateLocal();
   controls.minDistance = localR + MIN_ALT;
   const alt = altitudeU(), dist = camera.position.length();
-  controls.rotateSpeed = clamp(alt * 0.45, 0.0015, 1);
-  controls.zoomSpeed = Math.log((localR + 0.85 * alt) / dist) / Math.log(0.95);
+  // Dragging one screen height moves the ground by about one screen height at every altitude (OrbitControls
+  // turns a drag of the full height into 2*pi*rotateSpeed radians). Tilted views look further away, so slower.
+  const viewDist = alt / Math.max(Math.cos(Math.min(tilt, 1.2)), 0.35);
+  controls.rotateSpeed = clamp((viewDist * Math.tan((camera.fov * D2R) / 2)) / Math.PI, 2e-7, 1);
+  controls.zoomSpeed = Math.log((localR + 0.85 * alt) / dist) / Math.log(0.95);   // touch pinch only (wheel below)
+  if (zoomTo != null) {                                      // eased wheel / trackpad zoom
+    const a = alt + (zoomTo - alt) * 0.22;
+    camera.position.setLength(localR + a);
+    if (Math.abs(zoomTo - a) < zoomTo * 0.002) zoomTo = null;
+  }
   controls.update();
   if (tilt) camera.rotateX(tilt); // pitch up toward the horizon (north-facing)
   camera.updateMatrixWorld();
+  const ce = camera.matrixWorld.elements;
+  let moved = false;
+  for (let i = 0; i < 16; i++) if (ce[i] !== camPrev[i]) { moved = true; camPrev[i] = ce[i]; }
+  if (moved || flight || state.playing || queue.length || inflight.size) lastActive = now;
+  if (now - lastActive > 1500 && frame % 6 !== 0) { frame++; return; }
 
   if (frame % 2 === 0) updateLOD();
   if (frame % 30 === 0) {
@@ -1991,7 +2448,8 @@ renderer.setAnimationLoop((now) => {
     barEl.style.width = `${(ready / 32) * 100}%`;
     if (holes === 0 && frame > 0) loadingEl.style.display = 'none';
   }
-  if (frame % 90 === 45 && apxs.ready) drapeApxs();   // re-drape as sharper elevation tiles arrive
+  if (apxs.ready && (drapeDue ? frame % 10 === 0 : frame % 120 === 60)) { drapeDue = false; drapeApxs(); }
+  overlayLift.value = Math.max(LIFT_MIN, altitudeU() * 0.004);      // ~0.4% of altitude, at least 30 m
   updateMarkers();
   updateApxs();
   renderer.render(scene, camera);

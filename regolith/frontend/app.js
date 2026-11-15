@@ -25,7 +25,7 @@ const h = (tag, props = {}, ...kids) => {
   const n = document.createElement(tag);
   for (const [k, v] of Object.entries(props)) {
     if (k === 'class') n.className = v;
-    else if (k === 'style') Object.assign(n.style, v);
+    else if (k === 'style') for (const [sk, sv] of Object.entries(v)) n.style.setProperty(sk.startsWith('--') ? sk : sk.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`), sv);
     else if (k.startsWith('on')) n.addEventListener(k.slice(2), v);
     else if (v !== undefined && v !== null && v !== false) n.setAttribute(k, v === true ? '' : v);
   }
@@ -37,6 +37,12 @@ const fmtDist = (m) => (m == null ? '' : m < 1000 ? `${Math.round(m)} m` : m < 1
 const fmtLL = (lat, lon) => { const L = ((lon + 180) % 360 + 360) % 360 - 180; return `${Math.abs(lat).toFixed(4)}°${lat >= 0 ? 'N' : 'S'}, ${Math.abs(L).toFixed(4)}°${L >= 0 ? 'E' : 'W'}`; };
 const gauss = () => { let u = 0, v = 0; while (!u) u = Math.random(); while (!v) v = Math.random(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); };
 const classLabel = (cid) => S.classes.get(cid)?.label || cid;
+/* Deposits tab overview: one colour per deposit family (dataviz slots 1-5, dark mode; validated adjacent:
+   CVD ΔE ≥ 8.4, normal-vision ≥ 19.3, all ≥ 3:1 contrast). Always shown with the family name. */
+const FAMILY_COLORS = {};   // family id -> colour, from the backend's overview view (the same colours as the map)
+const familyOf = (cid) => S.classes.get(cid)?.family || null;
+const familyLabel = (fam) => S.views.find((v) => v.id === fam)?.label || 'Typical';
+const familyColor = (cid) => FAMILY_COLORS[familyOf(cid)] || S.other;
 function classColor(cid, viewId = S.view) {
   const v = S.views.find((x) => x.id === viewId);
   const g = v ? v.groups.findIndex((grp) => grp.classes.includes(cid)) : -1;
@@ -57,11 +63,14 @@ window.addEventListener('message', (e) => {
     S.globeReady = true;
     S.outbox.splice(0).forEach(toGlobe);
   } else if (m.type === 'rm:rock') {
-    showDetail(m.id, { fromMap: true });
+    if (m.id) showDetail(m.id, { fromMap: true });
+  } else if (m.type === 'rm:prospects') {
+    $('m-prosp').setAttribute('aria-pressed', String(!!m.on));
   } else if (m.type === 'rm:position') {
     setPosition(m.lat, m.lon, false);
     setPicking(false);
   } else if (m.type === 'rm:element') {
+    if (m.key) $('m-prosp').setAttribute('aria-pressed', 'false');
     $('m-elem').value = m.key || '';
     $('m-pct').value = 100 - (m.pct || 75);
     syncElementTools();
@@ -95,6 +104,12 @@ function sendElement() {
   toGlobe({ type: 'rm:element', key: $('m-elem').value || null, pct: 100 - +$('m-pct').value });
 }
 $('m-elem').addEventListener('change', sendElement);
+$('m-prosp').addEventListener('click', () => {
+  const on = $('m-prosp').getAttribute('aria-pressed') !== 'true';
+  $('m-prosp').setAttribute('aria-pressed', String(on));
+  if (on) { $('m-elem').value = ''; syncElementTools(); }
+  toGlobe({ type: 'rm:prospects', on });
+});
 $('m-pct').addEventListener('input', syncElementTools);
 $('m-pct').addEventListener('change', sendElement);
 
@@ -107,7 +122,9 @@ function selectTab(name) {
     t.tabIndex = on ? 0 : -1;
     $(`tab-${t.dataset.tab}`).hidden = !on;
   }
+  toGlobe({ type: 'rm:visible', on: name === 'map' });         // the globe stops rendering while hidden
   if (name === 'deposits') openDeposits();
+  if (name === 'data') openData();
 }
 tabs.forEach((t, i) => {
   t.addEventListener('click', () => selectTab(t.dataset.tab));
@@ -125,12 +142,12 @@ async function boot() {
     const [health, meta, list] = await Promise.all([api('/health'), api('/meta'), api('/rocks')]);
     S.meta = meta;
     S.views = meta.views || [];
+    applyRanges(meta.ranges);
     S.slots = meta.slot_colors || S.slots;
+    S.views.slice(1).forEach((v, i) => { FAMILY_COLORS[v.id] = S.slots[i]; });
     S.other = meta.other_color || S.other;
     (meta.classes || []).forEach((c) => S.classes.set(c.id, c));
     S.summary = list.rocks;
-    $('status').className = 'status ok';
-    $('status').lastElementChild.textContent = `backend online · data built ${String(health.generated_utc || '').slice(0, 10)}`;
     renderStats(meta);
     buildSimulator();
     buildElementTools();
@@ -139,6 +156,7 @@ async function boot() {
     if (rid) showDetail(rid);
   } catch (e) {
     $('status').className = 'status bad';
+    $('status').hidden = false;
     $('status').lastElementChild.textContent = `backend offline (${e.message})`;
   }
 }
@@ -156,11 +174,53 @@ function renderStats(meta) {
 
 /* ====================================================================== field reading form */
 const grid = $('chem-grid');
+/* Each element: a slider over the range actually measured by APXS (square-root scale, so the common low values
+   get fine control and rare extremes still fit), a tick at typical Mars (the median), and an exact-value box.
+   An empty box means "not measured"; a reading needs only 3 elements. */
+const SL_STEPS = 1000;
+const sliders = new Map();
+const niceMax = (v) => { const m = 10 ** Math.floor(Math.log10(v)), f = v / m; return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * m; };
+const fmtChem = (el, v) => (TRACE.has(el) ? String(Math.round(v)) : v < 10 ? v.toFixed(2) : v.toFixed(1));
+const posOf = (el, v) => Math.round(Math.sqrt(Math.min(1, Math.max(0, v / sliders.get(el).max))) * SL_STEPS);
+const valOf = (el, p) => { const v = sliders.get(el).max * (p / SL_STEPS) ** 2; return TRACE.has(el) ? Math.round(v) : Math.round(v * 100) / 100; };
 const inputs = ORDER.map((el) => {
-  const input = h('input', { type: 'number', step: 'any', min: '0', inputmode: 'decimal', 'data-el': el, 'aria-label': `${el} in ${unit(el)}` });
-  grid.append(h('label', {}, h('span', {}, h('b', {}, el), h('small', {}, unit(el))), input));
+  const input = h('input', { type: 'number', step: 'any', min: '0', inputmode: 'decimal', 'data-el': el, placeholder: '–',
+    'aria-label': `${el} in ${unit(el)}` });
+  const range = h('input', { type: 'range', min: '0', max: String(SL_STEPS), step: '1', value: '0', 'aria-label': `${el} slider` });
+  const tick = h('i', { class: 'sl-tick', title: 'Typical Mars (median of every APXS measurement)' });
+  const row = h('div', { class: 'sl unset' },
+    h('div', { class: 'sl-h' }, h('b', {}, el), h('span', { class: 'sl-v' }, input, h('small', {}, unit(el)))),
+    h('div', { class: 'sl-track' }, range, tick));
+  sliders.set(el, { input, range, tick, row, max: TRACE.has(el) ? 10000 : 100 });
+  let dragging = false;
+  range.addEventListener('input', () => {
+    const v = valOf(el, +range.value);
+    input.value = v > 0 ? fmtChem(el, v) : '0';
+    dragging = true;                                          // keep the thumb where the finger is, not where rounding puts it
+    input.dispatchEvent(new Event('input'));
+    dragging = false;
+  });
+  input.addEventListener('input', () => syncSlider(el, !dragging));
+  grid.append(row);
   return input;
 });
+function syncSlider(el, fromBox = false) {
+  const s = sliders.get(el), raw = s.input.value.trim(), set = raw !== '' && Number.isFinite(+raw) && +raw >= 0;
+  s.row.classList.toggle('unset', !set);
+  if (fromBox || !set) s.range.value = set ? posOf(el, +raw) : 0;
+  s.range.style.setProperty('--fill', `${(+s.range.value / SL_STEPS) * 100}%`);
+  s.range.setAttribute('aria-valuetext', set ? `${raw} ${unit(el)}` : 'not measured');
+}
+function applyRanges(ranges) {
+  for (const [el, s] of sliders) {
+    const r = ranges?.[el];
+    if (!r) continue;
+    s.max = niceMax(r.max * 1.02);
+    s.tick.style.left = `${Math.sqrt(r.median / s.max) * 100}%`;
+    s.tick.title = `Typical Mars: ${fmtChem(el, r.median)} ${unit(el)} (median of ${r.n.toLocaleString()} APXS measurements; highest ${fmtChem(el, r.max)})`;
+    syncSlider(el, true);
+  }
+}
 function readChem() {
   const chem = {};
   for (const i of inputs) {
@@ -174,6 +234,8 @@ function writeChem(chem, simulated) {
     const v = chem[i.dataset.el];
     i.value = v == null ? '' : TRACE.has(i.dataset.el) ? String(Math.round(v)) : v.toFixed(2);
     i.classList.toggle('sim', !!simulated && v != null);
+    sliders.get(i.dataset.el).row.classList.toggle('sim', !!simulated && v != null);
+    syncSlider(i.dataset.el, true);
   }
   onChemInput();
 }
@@ -200,6 +262,7 @@ function onChemInput() {
 }
 inputs.forEach((i) => i.addEventListener('input', () => {
   i.classList.remove('sim');
+  sliders.get(i.dataset.el).row.classList.remove('sim');
   if (S.simulated) { S.simulated = null; $('sim-note').replaceChildren(); }
   onChemInput();
 }));
@@ -210,8 +273,8 @@ function getPos() {
   return Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 360 ? { lat, lon } : null;
 }
 function setPosition(lat, lon, tellGlobe = true) {
-  $('lat').value = lat.toFixed(5);
-  $('lon').value = (((lon + 180) % 360 + 360) % 360 - 180).toFixed(5);
+  $('lat').value = lat.toFixed(4);                             // 0.0001 deg = 6 m on Mars, finer than any rover fix
+  $('lon').value = (((lon + 180) % 360 + 360) % 360 - 180).toFixed(4);
   if (tellGlobe) toGlobe({ type: 'rm:set-position', lat, lon });
 }
 ['lat', 'lon'].forEach((id) => $(id).addEventListener('change', () => { const p = getPos(); if (p) toGlobe({ type: 'rm:set-position', ...p }); }));
@@ -225,7 +288,7 @@ $('pick-btn').addEventListener('click', () => setPicking(!$('pick-btn').classLis
 /* simulate a field reading from a real measurement + its instrument error bars */
 function buildSimulator() {
   const sel = $('sim-class');
-  sel.replaceChildren(h('option', { value: '' }, 'Simulate a reading from… any rock'));
+  sel.replaceChildren(h('option', { value: '' }, 'Any rock type'));
   for (const v of S.views.filter((x) => x.id !== 'unusual')) {
     const og = h('optgroup', { label: v.label });
     v.groups.flatMap((g) => g.classes).forEach((cid) => {
@@ -270,6 +333,7 @@ $('clear-btn').addEventListener('click', () => {
   S.simulated = null;
   $('sim-note').replaceChildren();
   $('card-result').hidden = true;
+  $('card-guide').hidden = false;
   S.result = null;
   S.query = null;
   toGlobe({ type: 'rm:clear' });
@@ -318,16 +382,32 @@ async function runMatch() {
   }
 }
 
+// Line icons (Lucide, ISC licence) - stroke uses currentColor
+const ICON = {
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>',
+  copy: '<rect x="8" y="8" width="13" height="13" rx="2"/><path d="M4 16V5a1 1 0 0 1 1-1h11"/>',
+  pin: '<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>',
+  ext: '<path d="M7 7h10v10"/><path d="M7 17 17 7"/>',
+};
+function icon(name, cls = 'ic') {
+  const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('class', cls); s.setAttribute('aria-hidden', 'true');
+  s.setAttribute('fill', 'none'); s.setAttribute('stroke', 'currentColor'); s.setAttribute('stroke-width', '2');
+  s.setAttribute('stroke-linecap', 'round'); s.setAttribute('stroke-linejoin', 'round');
+  s.innerHTML = ICON[name];
+  return s;
+}
 const VERDICT = {
-  SAMPLE: { cls: 'v-sample', icon: '✓', title: 'Collect a sample' },
-  MAYBE: { cls: 'v-maybe', icon: '?', title: 'Worth a closer look' },
-  DUPLICATE: { cls: 'v-duplicate', icon: '=', title: 'Already well sampled' },
+  SAMPLE: { cls: 'v-sample', icon: 'check', title: 'Collect a sample' },
+  MAYBE: { cls: 'v-maybe', icon: 'search', title: 'Worth a closer look' },
+  DUPLICATE: { cls: 'v-duplicate', icon: 'copy', title: 'Already well sampled' },
 };
 function renderResult(res) {
   $('card-result').hidden = false;
   const v = VERDICT[res.verdict.label] || VERDICT.MAYBE;
   $('verdict').replaceChildren(h('div', { class: `verdict ${v.cls}` },
-    h('span', { class: 'v-icon', 'aria-hidden': 'true' }, v.icon),
+    h('span', { class: 'v-icon', 'aria-hidden': 'true' }, icon(v.icon)),
     h('div', {}, h('b', {}, `${res.verdict.label} · ${v.title}`), h('p', {}, res.verdict.reason))));
 
   const q = res.query;
@@ -349,9 +429,13 @@ function renderResult(res) {
       ` — ${fmtDist(n.distance_m)} away (${n.rover}, sol ${n.sol})`));
   }
   $('facts').replaceChildren(...facts);
+  $('card-guide').hidden = true;
+  const insights = [];
   if (q.context?.why || q.context?.drivers?.length) {
-    $('facts').append(h('div', { class: 'query-why why' }, h('h3', { style: { marginTop: 0 } }, 'Why your reading looks like this'), ...whyBlock(q.context, false)));
+    insights.push(h('div', { class: 'query-why why' }, h('h3', { style: { marginTop: 0 } }, 'Why your reading looks like this'), ...whyBlock(q.context, false)));
   }
+  insights.push(predictionsBlock(q));
+  $('insights').replaceChildren(...insights);
 
   $('matches').replaceChildren(...res.matches.map((m, i) => {
     const li = h('li', { class: 'match', tabindex: 0, 'data-id': m.id, 'aria-label': `${m.name}, ${m.similarity}% similar` },
@@ -391,7 +475,7 @@ async function showDetail(id, { fromMap = false } = {}) {
   $('d-meta').textContent = bits.join(' · ');
   renderClassChip(d);
   renderComposition(d.chemistry);
-  $('d-why').replaceChildren(...whyBlock(d.context || {}));
+  $('d-why').replaceChildren(...whyBlock(d.context || {}), d.minerals ? mineralsBlock(d.minerals) : '');
   markActive();
   renderSpider();
   renderValues();
@@ -459,7 +543,7 @@ async function loadPhotos(d) {
     const show = (im, btn) => {
       main.replaceChildren(h('img', { src: im.url, alt: `${im.title} (sol ${im.sol})` }),
         h('span', { class: 'tag' }, `${d.rover} · sol ${im.sol} · ${p.credit}`),
-        h('span', { class: 'open' }, im.page ? 'Open on NASA ↗' : 'Full size ↗'));
+        h('span', { class: 'open' }, im.page ? 'Open on NASA' : 'Full size', icon('ext', 'ic sm')));
       main.href = im.page || im.url;
       thumbs.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', b === btn));
     };
@@ -493,6 +577,133 @@ function renderComposition(chem) {
 }
 
 /* why: likely formation + element drivers + region + NASA links */
+/* ====================================================================== data & methods tab */
+const KIND_TITLE = {
+  dataset: ['Datasets the results are computed from', 'Downloaded by fetch_data.py and built into the app\'s data files.'],
+  imagery: ['Live imagery', 'Streamed from NASA while you use the map; nothing is computed from it.'],
+  reference: ['Published NASA results', 'Used as constants or as the "why" links.'],
+};
+async function openData() {
+  if (S.dataLoaded) return;
+  const box = $('data-body');
+  let src, val;
+  try { [src, val] = await Promise.all([api('/sources'), api('/validation')]); }
+  catch (e) { box.replaceChildren(h('p', { class: 'note' }, `Could not load: ${e.message}`)); return; }
+  S.dataLoaded = true;
+  const m = val.matching || {}, nb = val.nearby || {}, gr = val.ground || {};
+  const n = (k) => src.sources.filter((s) => s.agency === k).length;
+  const tile = (value, label, sub) => h('div', { class: 'tile' }, h('b', {}, value), h('span', {}, label), sub ? h('small', {}, sub) : '');
+  const kids = [
+    h('h2', { class: 'data-h' }, 'Only NASA and Canadian Space Agency data'),
+    h('p', { class: 'lead' }, `Regolith is built from ${n('NASA')} NASA sources and the Canadian Space Agency's APXS open data. `,
+      'Curiosity\'s APXS, the source of 1,768 of the 2,475 measurements, is Canada\'s contribution to that mission.'),
+  ];
+  for (const kind of ['dataset', 'imagery', 'reference']) {
+    kids.push(h('h3', {}, KIND_TITLE[kind][0]), h('p', { class: 'hint' }, KIND_TITLE[kind][1]),
+      h('div', { class: 'src-list' }, ...src.sources.filter((s) => s.kind === kind).map((s) => h('div', { class: 'src-row' },
+        h('span', { class: `agency ${s.agency.toLowerCase()}` }, s.agency),
+        h('div', {},
+          h('a', { class: 'src-name', href: s.url, target: '_blank', rel: 'noopener' }, s.name, icon('ext', 'ic sm')),
+          h('div', { class: 'src-prod' }, s.product),
+          h('div', { class: 'src-use' }, h('b', {}, 'Used for: '), s.used_for),
+          s.loaded ? h('div', { class: 'src-use' }, h('b', {}, 'Loaded: '), s.loaded) : '',
+          h('div', { class: 'src-prov' }, `${s.provider} · ${s.licence}`))))));
+  }
+  kids.push(h('h2', { class: 'data-h' }, 'How well it works'),
+    h('p', { class: 'lead' }, 'Every figure below is measured on data the method was not allowed to see. The tests run each time the dataset is built.'),
+    h('div', { class: 'tiles' },
+      tile(`${m.remeasure_top1_pct}%`, 'known rock found first', `in the top five ${m.remeasure_top5_pct}% of the time`),
+      tile(`${m.remeasure_same_type_pct}%`, 'deposit type right', 'for the closest match of a re-measured rock'),
+      tile(`${nb.top1_pct}%`, 'new-stop forecast right', `always guessing basalt: ${nb.baseline_pct}%`),
+      tile(`${nb.top3_pct}%`, 'right type in the top three', `${(nb.n || 0).toLocaleString()} held-out measurements`)),
+    h('h3', {}, 'Matching and classification'),
+    h('ul', { class: 'method' },
+      h('li', {}, h('b', {}, 'Re-measurement test. '), `${m.n} measurements were "measured again" by adding noise the size of their own instrument error bars. `,
+        `The original rock came back as the closest match ${m.remeasure_top1_pct}% of the time and within the top five ${m.remeasure_top5_pct}% of the time.`),
+      h('li', {}, h('b', {}, 'Stable classes. '), `The noisy copy was given the same deposit type as the original ${m.classification_stable_pct}% of the time.`),
+      h('li', {}, h('b', {}, 'Nearest other rock. '), `With a rock removed from the library, the closest remaining rock had the same deposit type ${m.nearest_other_same_type_pct}% of the time.`)),
+    h('h3', {}, 'Forecast: what you will find within 1 km'),
+    h('p', { class: 'hint' }, `Each measurement was hidden together with everything within ${nb.hold_m} m of it (the whole rover stop) and predicted from the rest. `,
+      'The table checks the percentages themselves: when the forecast says a type has a given chance, how often does it turn up?'),
+    h('table', { class: 'dep-table cal' },
+      h('thead', {}, h('tr', {}, h('th', {}, 'Forecast said'), h('th', { class: 'num' }, 'Average forecast'), h('th', { class: 'num' }, 'Actually happened'), h('th', { class: 'num' }, 'Predictions'))),
+      h('tbody', {}, ...(nb.calibration || []).map((c) => h('tr', {},
+        h('td', {}, `${c.range_pct[0]}–${c.range_pct[1]}%`), h('td', { class: 'num' }, `${c.predicted_pct}%`),
+        h('td', { class: 'num' }, `${c.observed_pct}%`), h('td', { class: 'num' }, c.n.toLocaleString()))))));
+  if (gr.sites?.length) {
+    const ox = Object.keys(gr.sites[0].predicted);
+    kids.push(h('h3', {}, 'Forecast: soil composition from orbit'),
+      h('p', { class: 'hint' }, 'Odyssey element maps converted to oxides, against the median of each rover\'s own soil measurements (wt%).'),
+      h('table', { class: 'dep-table cal' },
+        h('thead', {}, h('tr', {}, h('th', {}, 'Site'), ...ox.flatMap((o) => [h('th', { class: 'num' }, `${o} orbit`), h('th', { class: 'num' }, 'rover')]))),
+        h('tbody', {}, ...gr.sites.map((s) => h('tr', {}, h('td', {}, `${s.rover} (${s.n_soils} soils)`),
+          ...ox.flatMap((o) => [h('td', { class: 'num' }, s.predicted[o].toFixed(2)), h('td', { class: 'num' }, s.measured[o].toFixed(2))]))),
+          h('tr', { class: 'worst' }, h('td', {}, 'Largest difference'), ...ox.flatMap((o) => [h('td', { class: 'num', colspan: 2 }, `±${gr.error_pct[o]}%`)])))));
+  }
+  kids.push(h('h3', {}, 'What Regolith does not claim'),
+    h('ul', { class: 'method' },
+      h('li', {}, 'APXS measures elements, not minerals. Deposit types and mineral amounts are readings of bulk chemistry, not identifications.'),
+      h('li', {}, 'Orbital values are 600 km averages of roughly the top few tens of centimetres. A prospect zone marks where to look, not a confirmed deposit.'),
+      h('li', {}, 'Rovers visited three sites and chose unusual targets, so local forecasts describe what was sampled, not a random sample of the ground.'),
+      h('li', {}, 'Measurement positions are the rover\'s position for that sol, typically within about 100 m of the rock.')));
+  box.replaceChildren(...kids);
+}
+
+/* ---------------------------------------------------------------- predictions (estimates, with their basis) */
+const pbar = (pct, color) => h('span', { class: 'pbar' }, h('i', { style: { width: `${Math.max(1, Math.min(100, pct))}%`, background: color || 'var(--series-1)' } }));
+function mineralsBlock(m) {
+  const box = h('div', { class: 'pred' }, h('h3', {}, 'Likely minerals ', h('span', { class: 'est' }, 'estimate')));
+  if (!m.minerals.length) box.append(h('p', { class: 'note' }, 'No salt, sulfate or phosphate above 0.5 wt% - mostly silicate (basalt) minerals.'));
+  m.minerals.forEach((x) => box.append(h('div', { class: 'prow', title: x.note },
+    h('span', { class: 'pname' }, x.name, h('small', {}, x.formula)), pbar(x.wt), h('span', { class: 'pval' }, `up to ${x.wt} wt%`))));
+  box.lastChild && box.classList.add('minerals');
+  m.unassigned.forEach((t) => box.append(h('p', { class: 'note' }, t)));
+  box.append(h('p', { class: 'caveat' }, m.basis));
+  return box;
+}
+function predictionsBlock(q) {
+  const box = h('div', { class: 'preds' });
+  if (q.minerals) box.append(mineralsBlock(q.minerals));
+  const f = q.forecast;
+  if (!f) {
+    box.append(h('p', { class: 'note' }, 'Set your position to also predict what is around you.'));
+    return box;
+  }
+  const near = h('div', { class: 'pred' }, h('h3', {}, 'What you will likely find within 1 km ', h('span', { class: 'est' }, 'estimate')));
+  if (f.nearby) {
+    near.append(h('p', { class: 'hint' }, `If you sample a rock here: based on ${f.nearby.n.toLocaleString()} ${f.nearby.rovers.join(' and ')} measurements `,
+      `within 1 km (sols ${f.nearby.sols[0]}–${f.nearby.sols[1]}), closer ones counting more. Nearest: ${f.nearby.nearest.name}, ${fmtDist(f.nearby.nearest.distance_m)} away.`));
+    f.nearby.odds.forEach((o) => near.append(h('div', { class: 'prow' },
+      h('span', { class: 'pname' }, dot(classColor(o.class)), o.label), pbar(o.pct, classColor(o.class)), h('span', { class: 'pval' }, `${o.pct}%`))));
+    const k = f.nearby.skill;
+    if (k) near.append(h('p', { class: 'skill' }, h('b', {}, 'How reliable: '), `tested on ${k.n.toLocaleString()} measurements with their whole rover stop hidden, `,
+      `the top prediction was right ${Math.round(k.top1_pct)}% of the time (always guessing basalt: ${Math.round(k.baseline_pct)}%) `,
+      `and the right type was in the top three ${Math.round(k.top3_pct)}% of the time.`));
+    near.append(h('p', { class: 'caveat' }, f.nearby.caveat));
+  } else {
+    near.append(h('p', { class: 'note' }, 'No rover measured rocks within 1 km of this position, so there is no local prediction. The orbital estimates below still apply.'));
+  }
+  box.append(near);
+  if (f.water) {
+    const w = f.water;
+    box.append(h('div', { class: 'pred' }, h('h3', {}, 'Water you could extract here ', h('span', { class: 'est' }, 'estimate')),
+      h('div', { class: 'wbig' }, h('b', {}, `about ${w.practical_l_t ?? w.upper_l_t} L`), ' per tonne of soil',
+        w.practical_l_t != null ? h('span', { class: 'note' }, ` · up to ${w.upper_l_t} L if all of it were released`) : ''),
+      h('p', { class: 'caveat' }, `Odyssey measured ${w.h2o_wt.toFixed(1)} wt% water-equivalent hydrogen in this 5° cell. `,
+        w.share ? `When Curiosity heated Gale soil to 835 °C, it released about 2 wt% water, ${Math.round(w.share * 100)}% of Odyssey's value there; the practical figure assumes the same share. ` : '',
+        h('a', { href: f.sources.sam.url, target: '_blank', rel: 'noopener' }, 'NASA: SAM finds water in soil', icon('ext', 'ic sm')))));
+  }
+  if (f.ground?.predicted && Object.keys(f.ground.predicted).length) {
+    const err = f.ground.check?.error_pct || {};
+    box.append(h('div', { class: 'pred' }, h('h3', {}, 'Soil an APXS would likely read here ', h('span', { class: 'est' }, 'from orbit')),
+      h('div', { class: 'soil' }, ...Object.entries(f.ground.predicted).map(([ox, v]) =>
+        h('span', {}, h('b', {}, ox), ` ${v} wt%`, err[ox] != null ? h('small', {}, ` ±${err[ox]}%`) : ''))),
+      h('p', { class: 'caveat' }, 'Odyssey Fe, Si, K and Cl converted to oxides. "±" is the largest difference from the rovers\' own soil measurements at Gale, Gusev and Meridiani.'),
+      f.zones.length ? h('p', { class: 'hint' }, 'Inside prospect zones: ', f.zones.map((z) => z.label).join(', ')) : ''));
+  }
+  return box;
+}
+
 function whyBlock(ctx, region = true) {
   const kids = [];
   if (ctx.why) kids.push(h('p', {}, ctx.why));
@@ -502,8 +713,8 @@ function whyBlock(ctx, region = true) {
       h('span', { class: `ratio ${d.direction}`, title: `${fmtValue(d.element, d.value)} ${d.unit} vs typical Mars` }, `${d.ratio}×`),
       h('span', {}, d.why)))));
   }
-  if (region && ctx.region) kids.push(h('div', { class: 'region' }, h('b', {}, `📍 ${ctx.region.name}`), h('span', {}, ctx.region.note)));
-  if (ctx.links?.length) kids.push(h('ul', { class: 'nasa-links' }, ...ctx.links.map((l) => h('li', {}, h('a', { href: l.url, target: '_blank', rel: 'noopener' }, l.title)))));
+  if (region && ctx.region) kids.push(h('div', { class: 'region' }, h('b', {}, icon('pin', 'ic sm'), ctx.region.name), h('span', {}, ctx.region.note)));
+  if (ctx.links?.length) kids.push(h('ul', { class: 'nasa-links' }, ...ctx.links.map((l) => h('li', {}, h('a', { href: l.url, target: '_blank', rel: 'noopener' }, l.title, icon('ext', 'ic sm'))))));
   if (ctx.caveat) kids.push(h('div', { class: 'caveat' }, ctx.caveat));
   return kids;
 }
@@ -563,7 +774,7 @@ async function openDeposits() {
       return;
     }
     $('dep-views').replaceChildren(...S.views.map((v) => h('button', { 'aria-pressed': v.id === S.depView, 'data-view': v.id,
-      onclick: () => { S.depView = v.id; renderDeposits(); } }, v.label)));
+      onclick: () => { S.depView = v.id; renderDeposits(); } }, FAMILY_COLORS[v.id] ? dot(FAMILY_COLORS[v.id]) : null, v.label)));
     $('dep-rover').addEventListener('change', renderDeposits);
   }
   renderDeposits();
@@ -572,11 +783,21 @@ function renderDeposits() {
   const view = S.views.find((v) => v.id === S.depView);
   document.querySelectorAll('#dep-views button').forEach((b) => b.setAttribute('aria-pressed', b.dataset.view === S.depView));
   const rover = $('dep-rover').value;
+  const overview = view.id === 'unusual';
+  const famOrder = Object.keys(FAMILY_COLORS);
+  // overview: colour by family and keep each family together; family views: the same colours as the map
+  const colorFor = (cid) => (overview ? familyColor(cid) : classColor(cid, view.id));
   const classIds = view.groups.flatMap((g) => g.classes);
+  if (overview) classIds.sort((a, b) => famOrder.indexOf(familyOf(a)) - famOrder.indexOf(familyOf(b)));
+  $('dep-legend').replaceChildren(...(overview
+    ? famOrder.map((f) => h('button', { class: 'fam', style: { '--c': FAMILY_COLORS[f] }, title: `Show only ${familyLabel(f)}`,
+        onclick: () => { S.depView = f; renderDeposits(); } }, dot(FAMILY_COLORS[f]), familyLabel(f)))
+    : view.groups.map((g, i) => h('span', { class: 'fam', style: { '--c': S.slots[i] } }, dot(S.slots[i]), g.label))));
   $('dep-classes').replaceChildren(...classIds.map((cid) => S.classes.get(cid)).filter((c) => c?.count).map((c) => {
     const counts = Object.entries(c.by_rover || {}).map(([r, n]) => h('span', {}, h('b', {}, String(n)), ` ${r}`));
-    return h('div', { class: 'dep-card' },
-      h('h4', {}, dot(classColor(c.id, view.id)), c.label),
+    return h('div', { class: 'dep-card', style: { '--c': colorFor(c.id) } },
+      overview ? h('div', { class: 'fam-chip' }, familyLabel(c.family)) : null,
+      h('h4', {}, dot(colorFor(c.id)), c.label),
       h('p', {}, c.description),
       h('div', { class: 'rule' }, `Rule: ${c.rule}`),
       h('div', { class: 'counts' }, ...counts, h('span', {}, `· ${c.sites} site${c.sites === 1 ? '' : 's'}`)),
@@ -585,8 +806,8 @@ function renderDeposits() {
   const deps = S.deposits.filter((d) => classIds.includes(d.class) && (!rover || d.rover === rover))
     .sort((a, b) => b.count - a.count).slice(0, 250);
   $('dep-count').textContent = `(${deps.length.toLocaleString()})`;
-  $('dep-rows').replaceChildren(...deps.map((d) => h('tr', {},
-    h('td', {}, dot(classColor(d.class, view.id)), classLabel(d.class)),
+  $('dep-rows').replaceChildren(...deps.map((d) => h('tr', { style: { '--c': colorFor(d.class) } },
+    h('td', { class: 'type' }, dot(colorFor(d.class)), classLabel(d.class), overview ? h('span', { class: 'fam-sub' }, familyLabel(familyOf(d.class))) : null),
     h('td', {}, d.rover),
     h('td', { class: 'num' }, String(d.count)),
     h('td', { class: 'num' }, d.sol_first === d.sol_last ? String(d.sol_first) : `${d.sol_first}–${d.sol_last}`),

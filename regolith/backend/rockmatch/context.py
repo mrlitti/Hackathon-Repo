@@ -9,6 +9,8 @@ from .chemistry import OXIDES, TRACES
 
 # NASA / JPL pages (each checked to exist)
 LINKS = {
+    "odyssey": {"title": "NASA: Mars Odyssey science instruments (Gamma Ray Spectrometer)",
+                "url": "https://science.nasa.gov/mission/odyssey/science-instruments/"},
     "msl": {"title": "NASA: Curiosity rover mission", "url": "https://science.nasa.gov/mission/msl-curiosity/"},
     "mer": {"title": "NASA: Spirit and Opportunity rovers", "url": "https://science.nasa.gov/mission/mars-exploration-rovers-spirit-and-opportunity/"},
     "vein": {"title": "JPL: NASA Mars rover finds mineral vein deposited by water (2011)",

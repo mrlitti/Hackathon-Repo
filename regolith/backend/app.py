@@ -1,6 +1,6 @@
 """Regolith backend (FastAPI).
 
-Data: 2,900+ APXS measurements from Curiosity, Spirit and Opportunity (NASA PDS + CSA),
+Data: 2,475 APXS measurements from Curiosity, Spirit and Opportunity (NASA PDS + CSA),
 built by scripts/build_dataset.py into data/*.json.
 
 API
@@ -19,6 +19,11 @@ API
   POST /api/classify                   deposit class for a composition
   POST /api/match                      nearest matches + sampling verdict for a composition
   POST /api/photos                     upload a rock photo
+  GET  /api/elements, /api/elements/{key}   element concentration maps (Odyssey GRS + APXS hotspots)
+  GET  /api/prospects                  prospect zones judged from orbit, with rover ground truth
+  GET  /api/forecast?lat=&lon=         predictions for one spot: water, soil from orbit, deposit types nearby
+  GET  /api/validation                 hold-out test results for matching and predictions
+  GET  /api/sources                    every NASA and CSA data source used
 
 Pages: /  (Regolith)   /globe/  (3D Mars globe, also works standalone)
 Run:   cd backend && uvicorn app:app --reload
@@ -44,9 +49,12 @@ from pydantic import BaseModel, Field  # noqa: E402
 
 from rockmatch.chemistry import (CLASS_BY_ID, CLASS_FAMILY, DEPOSIT_CLASSES, ELEMENTS, MAP_VIEWS,  # noqa: E402
                                  OTHER_COLOR, OXIDES, SLOT_COLORS, classify, clean_chemistry)
-from rockmatch.context import explain  # noqa: E402
-from rockmatch.elements import CATALOG as ELEMENT_CATALOG, catalog as element_catalog, element_map  # noqa: E402
-from rockmatch.geo import distance_m  # noqa: E402
+from rockmatch.context import LINKS, explain  # noqa: E402
+from rockmatch.elements import CATALOG as ELEMENT_CATALOG, catalog as element_catalog, element_map, grs_value  # noqa: E402
+from rockmatch.geo import distance_m, wrap_lon  # noqa: E402
+from rockmatch.predict import (SAM_GALE_WT, SAM_LINK, ground_from_grs, minerals, nearby,  # noqa: E402
+                               validate_ground, water_yield)
+from rockmatch.sources import with_counts as sources_with_counts  # noqa: E402
 from rockmatch.match import Matcher, similarity_pct, verdict  # noqa: E402
 from rockmatch.net import http_get  # noqa: E402
 from rockmatch.photos import rover_photos  # noqa: E402
@@ -93,7 +101,16 @@ class Store:
         self.matcher = Matcher(self.rocks) if self.rocks else None
         grs_doc = _load("grs_maps.json", {})
         self.grs: dict = grs_doc.get("maps", {})
-        self.grs_meta = {k: grs_doc.get(k) for k in ("source", "url", "note")}
+        self.grs_meta = {k: grs_doc.get(k) for k in ("source", "url", "browse", "note")}
+        self.prospects: dict = _load("prospects.json", {})
+        self.validation: dict = _load("validation.json", {})
+        # slider ranges for the reading form: what was actually measured (min, median, max) per element
+        self.ranges = {}
+        for el in ELEMENTS:
+            vals = sorted(r["chemistry"][el] for r in self.rocks if el in r["chemistry"])
+            if vals:
+                self.ranges[el] = {"min": vals[0], "median": vals[len(vals) // 2] if len(vals) % 2 else
+                                   (vals[len(vals) // 2 - 1] + vals[len(vals) // 2]) / 2, "max": vals[-1], "n": len(vals)}
         # "typical Mars": the median of every APXS measurement, used to normalise chemistry charts
         self.reference = {}
         for el in ELEMENTS:
@@ -102,6 +119,14 @@ class Store:
                 self.reference[el] = round(vals[len(vals) // 2], 4)
         for c in self.classes:
             c["family"] = CLASS_FAMILY.get(c["id"])
+        # predictions: planet-wide deposit mix (prior), Gale's orbital water value, orbit-vs-ground check
+        n = len(self.rocks) or 1
+        self.class_prior = {c["id"]: c.get("count", 0) / n for c in self.classes}
+        self.class_labels = {c["id"]: c["label"] for c in self.classes}
+        cur = [r for r in self.rocks if r["rover"] == "Curiosity"]
+        self.gale_h2o = (grs_value(self.grs, "H2O", sum(r["lat"] for r in cur) / len(cur), sum(r["lon"] for r in cur) / len(cur))
+                         if cur and self.grs else None)
+        self.ground_check = validate_ground(lambda el, la, lo: grs_value(self.grs, el, la, lo), self.rocks) if self.grs else None
 
 
 store = Store()
@@ -168,7 +193,7 @@ def health():
 def meta():
     return {**store.meta, "classes": store.classes, "deposit_sites": len(store.deposits),
             "earth_refs": len(store.earth_refs), "views": MAP_VIEWS, "slot_colors": SLOT_COLORS,
-            "other_color": OTHER_COLOR,
+            "other_color": OTHER_COLOR, "ranges": store.ranges,
             "reference": {"label": f"Median of all {len(store.rocks):,} APXS measurements",
                           "chemistry": store.reference}}
 
@@ -231,6 +256,7 @@ def get_rock(rock_id: str):
             "similar": [{**summary(m["rock"]), "similarity": m["similarity"]} for m in similar],
             "earth_ref": nearest_earth_ref(rock["chemistry"]),
             "context": explain(rock["deposit"], rock["chemistry"], store.reference, rock["rover"], rock["sol"]),
+            "minerals": minerals(rock["chemistry"]),
             "has_spectrum": "rsp" in rock.get("source", {})}
 
 
@@ -278,6 +304,75 @@ def get_deposit(dep_id: str):
         raise HTTPException(404, f"Deposit site '{dep_id}' not found")
     return {**d, "class_info": CLASS_BY_ID[d["class"]],
             "rocks": [summary(store.by_id[m]) for m in d["members"] if m in store.by_id]}
+
+
+def forecast(lat: float, lon: float) -> dict:
+    """Everything Regolith can predict for one spot, each part with its basis."""
+    h2o = grs_value(store.grs, "H2O", lat, lon)
+    here = _cell_centre(lat, lon)
+    vals = {el: grs_value(store.grs, el, lat, lon) for el in ("Fe", "Si", "K", "Cl")}
+    zones = []
+    for kind, k in (store.prospects.get("kinds") or {}).items():
+        for zi, z in enumerate(k["zones"]):
+            if any(abs(c[0] - here[0]) < 1e-6 and abs(c[1] - here[1]) < 1e-6 for c in z["cells"]):
+                zones.append({"kind": kind, "label": k["short"], "zone": zi})
+    return {
+        "lat": lat, "lon": lon, "cell": here, "zones": zones,
+        "water": water_yield(h2o, store.gale_h2o) if h2o is not None else None,
+        "ground": {"predicted": ground_from_grs(vals), "grs": vals, "check": store.ground_check,
+                   "masked": [el for el, v in vals.items() if v is None]} if any(v is not None for v in vals.values()) else None,
+        "nearby": _with_skill(nearby(lat, lon, store.rocks, store.class_labels, store.class_prior)),
+        "sources": {"grs": store.grs_meta.get("url"), "sam": SAM_LINK},
+        "basis": {
+            "water": "Odyssey water-equivalent hydrogen as litres per tonne of soil (1 wt% = 10 L per tonne). The "
+                     "practical yield assumes the same share is released as when Curiosity's SAM heated Gale soil "
+                     f"to 835 C ({SAM_GALE_WT} wt% water).",
+            "ground": "Odyssey Fe, Si, K and Cl converted to the oxides APXS reports (FeO, SiO2, K2O) by molar mass.",
+            "nearby": "Rover measurements within 1 km, closer ones counting more (300 m scale), smoothed towards the "
+                      "planet-wide mix. Model chosen and scored by a hold-out test.",
+        },
+    }
+
+
+def _with_skill(near: dict | None) -> dict | None:
+    """Attach the hold-out accuracy of the nearby model, so every forecast shows how far to trust it."""
+    if near and store.validation.get("nearby"):
+        v = store.validation["nearby"]
+        near["skill"] = {k: v[k] for k in ("n", "top1_pct", "top3_pct", "baseline_pct", "hold_m")}
+    return near
+
+
+@app.get("/api/sources")
+def sources():
+    """Every NASA and CSA data source used, with what was loaded from it."""
+    return {"sources": sources_with_counts(store.rocks, store.earth_refs, store.grs),
+            "retrieved_utc": store.meta.get("raw_retrieved_utc"), "built_utc": store.meta.get("generated_utc")}
+
+
+@app.get("/api/validation")
+def validation():
+    """Hold-out test results for matching and predictions (computed by build_dataset.py)."""
+    return {**store.validation, "ground": store.ground_check}
+
+
+def _cell_centre(lat: float, lon: float) -> tuple[float, float]:
+    import math
+    return (math.floor((lat + 90) / 5) * 5 - 90 + 2.5, math.floor((wrap_lon(lon) + 180) / 5) * 5 - 180 + 2.5)
+
+
+@app.get("/api/forecast")
+def forecast_point(lat: float = Query(..., ge=-90, le=90), lon: float = Query(..., ge=-360, le=360)):
+    """Predictions for one spot: extractable water, likely soil composition, likely deposit types nearby."""
+    return forecast(lat, wrap_lon(lon))
+
+
+@app.get("/api/prospects")
+def prospects():
+    """Candidate zones for deposit types, judged from orbit (Odyssey GRS + MOLA elevation) only."""
+    if not store.prospects:
+        raise HTTPException(404, "Prospect zones not built - run fetch_data.py --only mola, then build_dataset.py")
+    links = {k: LINKS[v["link"]] for k, v in store.prospects["kinds"].items() if v.get("link") in LINKS}
+    return {**store.prospects, "links": links, "ground_check": store.ground_check}
 
 
 @app.get("/api/elements")
@@ -328,7 +423,8 @@ def match(req: MatchRequest):
     n_close = store.matcher.count_within(chem, 0.6, exclude=exclude)
     result = {
         "query": {"chemistry": chem, "class": cid, "reason": why, "class_info": CLASS_BY_ID[cid],
-                  "elements_used": sorted(chem), "context": explain(cid, chem, store.reference)},
+                  "elements_used": sorted(chem), "context": explain(cid, chem, store.reference),
+                  "minerals": minerals(chem)},
         "matches": [{**summary(h["rock"]), "chemistry": h["rock"]["chemistry"], "similarity": h["similarity"],
                      "chem_distance": h["chem_distance"], "distance_m": h.get("distance_m")} for h in hits],
         "verdict": verdict(cid, hits, n_close, store.class_counts.get(cid, 0), len(store.rocks)),
@@ -341,6 +437,7 @@ def match(req: MatchRequest):
             best = min(same, key=lambda r: distance_m(req.lat, req.lon, r["lat"], r["lon"]))
             result["nearest_same_class"] = {**summary(best),
                                             "distance_m": round(distance_m(req.lat, req.lon, best["lat"], best["lon"]))}
+        result["query"]["forecast"] = forecast(req.lat, wrap_lon(req.lon))
     return result
 
 

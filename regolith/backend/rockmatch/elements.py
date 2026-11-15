@@ -4,6 +4,9 @@ Each source is reported in its own units and thresholds are percentiles *within*
 so orbital and rover values are never mixed on one scale."""
 from __future__ import annotations
 
+import math
+import statistics
+
 from .geo import fast_distance_m
 
 # key -> label, APXS field (oxide or element), GRS map key
@@ -20,7 +23,7 @@ HOTSPOT_M = 500.0
 
 def percentile(sorted_vals: list[float], pct: float) -> float:
     """Nearest-rank percentile of an ascending list."""
-    k = max(0, min(len(sorted_vals) - 1, int(round(pct / 100 * len(sorted_vals) + 0.5)) - 1))
+    k = max(0, min(len(sorted_vals) - 1, math.ceil(pct / 100 * len(sorted_vals)) - 1))
     return sorted_vals[k]
 
 
@@ -34,9 +37,27 @@ def catalog(rocks: list[dict], grs: dict) -> list[dict]:
     return out
 
 
+ROVERS = ("Curiosity", "Spirit", "Opportunity")
+
+
+def grs_cell(cells: list, lat: float, lon: float):
+    """The 5x5 degree cell (lat, lon, value, sigma) containing a point, or None where NASA masked it."""
+    clat = math.floor((lat + 90) / 5) * 5 - 90 + 2.5
+    clon = math.floor((lon + 180) / 5) * 5 - 180 + 2.5
+    return next((c for c in cells if abs(c[0] - clat) < 1e-6 and abs(c[1] - clon) < 1e-6), None)
+
+
+def grs_value(grs: dict, key: str, lat: float, lon: float) -> float | None:
+    """NASA's GRS value for the 5 deg cell containing a point, or None where NASA masked it."""
+    if key not in grs:
+        return None
+    c = grs_cell(grs[key]["cells"], lat, lon)
+    return c[2] if c else None
+
+
 def element_map(key: str, pct: float, rocks: list[dict], grs: dict, grs_meta: dict) -> dict:
     label, field, gkey = CATALOG[key]
-    out = {"key": key, "label": label, "percentile": pct, "grs": None, "apxs": None}
+    out = {"key": key, "label": label, "percentile": pct, "grs": None, "apxs": None, "sites": []}
 
     if gkey and gkey in grs:
         g = grs[gkey]
@@ -44,8 +65,9 @@ def element_map(key: str, pct: float, rocks: list[dict], grs: dict, grs_meta: di
         thr = percentile(vals, pct)
         out["grs"] = {"unit": g["unit"], "threshold": thr, "min": vals[0], "max": vals[-1], "median": g["median"],
                       "cells": g["cells"], "n_high": sum(1 for v in vals if v >= thr), "n": len(vals),
-                      "cell_deg": 5, "lat_range": g["lat_range"], "source": grs_meta.get("source"),
-                      "url": grs_meta.get("url"), "note": grs_meta.get("note")}
+                      "cell_deg": 5, "lat_range": g["lat_range"], "data_edge": g.get("data_edge"),
+                      "source": grs_meta.get("source"), "url": grs_meta.get("url"),
+                      "browse": grs_meta.get("browse"), "note": grs_meta.get("note")}
 
     if field:
         have = [r for r in rocks if field in r["chemistry"]]
@@ -70,7 +92,29 @@ def element_map(key: str, pct: float, rocks: list[dict], grs: dict, grs_meta: di
                               "ids": [m["id"] for m in ms]})
             spots.sort(key=lambda s: (-s["max"], -s["count"]))
             out["apxs"] = {"field": field, "unit": "ppm" if field in ("Ni", "Zn", "Br") else "wt%",
-                           "threshold": thr, "min": vals[0], "max": vals[-1], "median": vals[len(vals) // 2],
+                           "threshold": thr, "min": vals[0], "max": vals[-1], "median": statistics.median(vals),
                            "n": len(vals), "n_high": len(high), "hotspot_m": HOTSPOT_M,
                            "values": [[r["id"], r["chemistry"][field]] for r in have], "hotspots": spots}
+
+    # each rover site seen both ways: the orbital cell it sits in, and the rover's own measurements
+    for rover in ROVERS:
+        rs = [r for r in rocks if r["rover"] == rover]
+        if not rs:
+            continue
+        lat = sum(r["lat"] for r in rs) / len(rs)
+        lon = sum(r["lon"] for r in rs) / len(rs)
+        site = {"rover": rover, "lat": round(lat, 4), "lon": round(lon, 4), "grs": None, "apxs": None}
+        if out["grs"]:
+            cell = grs_cell(out["grs"]["cells"], lat, lon)
+            if cell:
+                vals = [c[2] for c in out["grs"]["cells"]]
+                site["grs"] = {"cell": [cell[0], cell[1]], "value": cell[2], "sigma": cell[3],
+                               "percentile": round(100 * sum(1 for v in vals if v <= cell[2]) / len(vals)),
+                               "high": cell[2] >= out["grs"]["threshold"]}
+        if out["apxs"]:
+            fv = [r["chemistry"][field] for r in rs if field in r["chemistry"]]
+            if fv:
+                site["apxs"] = {"n": len(fv), "n_high": sum(1 for v in fv if v >= out["apxs"]["threshold"]),
+                                "median": statistics.median(fv), "max": max(fv)}
+        out["sites"].append(site)
     return out

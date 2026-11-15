@@ -267,7 +267,20 @@ def fetch_grs(manifest: dict) -> None:
                                "citation": "Boynton et al. (2007), JGR 112, E12S99; ODY-M-GRS-5-ELEMENTS-V1.0", **s}
 
 
-STEPS = {"mer": fetch_mer, "tables": fetch_msl_tables, "csa": None, "rdr": None, "traverses": fetch_traverses, "grs": fetch_grs}
+MOLA_DEM = "https://trek.nasa.gov/tiles/Mars/EQ/Mars_MGS_MOLA_DEM_mosaic_global_463m_8/1.0.0/default/default028mm"
+
+
+def fetch_mola(manifest: dict) -> None:
+    print("\n[+] NASA Mars Trek - MGS MOLA elevation, whole planet at ~0.18 deg/px (zoom 2: 8 x 4 tiles)")
+    d = RAW / "trek_mola_dem_z2"
+    jobs = [(f"{MOLA_DEM}/2/{y}/{x}.png", d / f"{y}_{x}.png") for y in range(4) for x in range(8)]
+    s = download_many(jobs, "MOLA", 4)
+    manifest["trek_mola_dem_z2"] = {"url": f"{MOLA_DEM}/", "license": "NASA public data",
+                                    "note": "8-bit grey: 0..255 = -8201..+21241 m", **s}
+
+
+STEPS = {"mer": fetch_mer, "tables": fetch_msl_tables, "csa": None, "rdr": None, "traverses": fetch_traverses,
+         "grs": fetch_grs, "mola": fetch_mola}
 
 
 def main() -> None:
@@ -295,6 +308,8 @@ def main() -> None:
         fetch_traverses(manifest)
     if run("grs"):
         fetch_grs(manifest)
+    if run("mola"):
+        fetch_mola(manifest)
 
     manifest["_retrieved_utc"] = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
     manifest_path.write_text(json.dumps(manifest, indent=2))
