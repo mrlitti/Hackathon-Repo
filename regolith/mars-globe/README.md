@@ -1,8 +1,8 @@
 # Mars Globe
 
 Interactive 3D Mars built on real NASA data. One file: `index.html`.
-It works on its own, and when served by the Rock Match backend (http://127.0.0.1:8000/globe/) it also shows
-every APXS measurement, rover traverses and deposit types, and is embedded as the map in Rock Match.
+It works on its own, and when served by the Regolith backend (http://127.0.0.1:8000/globe/) it also shows
+every APXS measurement, rover traverses and deposit types, and is embedded as the map in Regolith.
 
 ## Run
 

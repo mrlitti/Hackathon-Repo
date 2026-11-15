@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Download every raw dataset Rock Match uses into backend/data/raw/.
+"""Download every raw dataset Regolith uses into backend/data/raw/.
 
 Sources (all public):
   * NASA PDS Geosciences Node - MER APXS oxide bundle (Spirit + Opportunity)
@@ -60,7 +60,7 @@ def curl_get(url: str, timeout: int) -> bytes:
     return r.stdout
 
 RAW = Path(__file__).resolve().parents[1] / "data" / "raw"
-USER_AGENT = "RockMatch-SpaceApps/1.0 (educational hackathon project)"
+USER_AGENT = "Regolith-SpaceApps/1.0 (educational hackathon project)"
 
 PDS_MSL = "https://pds-geosciences.wustl.edu/msl/msl-m-apxs-4_5-rdr-v1/mslapx_1xxx"
 PDS_MER = "https://pds-geosciences.wustl.edu/mer/mer1_mer2-m-apxs-5-oxide-sci-v1"

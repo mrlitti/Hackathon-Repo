@@ -1,7 +1,7 @@
 .venv/
 __pycache__/
-rock-match/backend/uploads/*
-!rock-match/backend/uploads/.gitkeep
+regolith/backend/uploads/*
+!regolith/backend/uploads/.gitkeep
 .DS_Store
-rock-match/backend/data/raw/
-rock-match/backend/data/cache/
+regolith/backend/data/raw/
+regolith/backend/data/cache/

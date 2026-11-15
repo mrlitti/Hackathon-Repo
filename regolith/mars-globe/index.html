@@ -68,7 +68,7 @@
   .you span { width:14px; height:14px; border-radius:50%; background:#00e5ff; border:2px solid #fff; margin-bottom:2px; animation:pulse 1.6s infinite; }
   @keyframes pulse { 0% { box-shadow:0 0 0 0 rgba(0,229,255,.75); } 100% { box-shadow:0 0 0 16px rgba(0,229,255,0); } }
   body.embed #credit { display:none; }
-  body.embed #rcol { top:64px; }            /* clear Rock Match's element toolbar overlaid on the frame */
+  body.embed #rcol { top:64px; }            /* clear Regolith's element toolbar overlaid on the frame */
   body.picking canvas { cursor:crosshair; }
   #elem-panel { display:none; margin-top:auto; }
   #elem-panel a { color:var(--blue); }
@@ -254,7 +254,7 @@ const TRUE_RELIEF = DEM_RANGE_M / 1000 / R_KM;         // full DEM range in Mars
 
 // NASA Mars Trek's global CTX layer (CTX_beta01_uncontrolled_5m_Caltech). Trek's own WMTS capabilities point its
 // tiles at this Esri-hosted URL (levels 0-11, 512-px tiles); MRO CTX images, NASA/JPL/MSSS.
-// When served by the Rock Match backend (/globe/), tiles go through its caching proxy.
+// When served by the Regolith backend (/globe/), tiles go through its caching proxy.
 const VIA_BACKEND = location.pathname.startsWith('/globe/');
 // Capped at 11, the deepest level Trek lists (level 12 there contains duplicated patches).
 const CTX = { max: 11, size: 512, url: (z, x, y) => (VIA_BACKEND ? `/api/tiles/ctx/${z}/${y}/${x}.png`
@@ -1278,7 +1278,7 @@ $('controls-head').onclick = () => $('controls').classList.toggle('collapsed');
 if (innerWidth < 700) $('controls').classList.add('collapsed');
 
 /* =====================================================================
-   APXS measurements & deposits — loaded from the Rock Match backend when it
+   APXS measurements & deposits — loaded from the Regolith backend when it
    is running (the globe still works on its own without it).
    ===================================================================== */
 const QS = new URLSearchParams(location.search);
@@ -1789,7 +1789,7 @@ async function showRockInfo(r) {
       <table class="chem">${rows}</table>
       <div class="photos" id="info-photos"><span class="note">Loading rover photos…</span></div>
       ${sim ? `<div class="note">Most similar: ${sim}</div>` : ''}
-      <a class="cta" href="/?rock=${encodeURIComponent(r.id)}" target="_top">Open in Rock Match →</a>`;
+      <a class="cta" href="/?rock=${encodeURIComponent(r.id)}" target="_top">Open in Regolith →</a>`;
     $('info-body').querySelectorAll('a[data-id]').forEach((a) => {
       a.onclick = (e) => { e.preventDefault(); selectRock(a.dataset.id, { fly: true }); };
     });

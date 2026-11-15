@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the Rock Match datasets from the raw downloads (run fetch_data.py first).
+"""Build the Regolith datasets from the raw downloads (run fetch_data.py first).
 
 Outputs (backend/data/):
   apxs_rocks.json   every APXS measurement: chemistry, errors, quality, location, deposit class, provenance

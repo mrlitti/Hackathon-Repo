@@ -1,7 +1,7 @@
-# Rock Match
+# Regolith
 
 **An APXS field guide for Mars astronauts.** An astronaut takes an APXS reading of a rock (or simulates one),
-and Rock Match compares it against **all 2,475 APXS measurements** made by Curiosity, Spirit and Opportunity. It then:
+and Regolith compares it against **all 2,475 APXS measurements** made by Curiosity, Spirit and Opportunity. It then:
 
 - names the closest measured rocks, how similar they are, and how far away they are from you;
 - classifies the deposit type (calcium-sulfate vein, opaline silica, manganese enrichment and so on);
@@ -12,13 +12,13 @@ and Rock Match compares it against **all 2,475 APXS measurements** made by Curio
 - has **element concentration maps**: choose an element (for example chlorine) to highlight in blue where it is
   highest, from orbit (Mars Odyssey Gamma Ray Spectrometer, whole planet) and on the ground (APXS hotspots).
 
-The APXS instrument was built by the **Canadian Space Agency**. Rock Match uses CSA Open Data directly
+The APXS instrument was built by the **Canadian Space Agency**. Regolith uses CSA Open Data directly
 (the Curiosity APXS archive mirror and the instrument's lab calibration standards), alongside NASA PDS data.
 
 ## Quick start
 
 ```bash
-cd rock-match
+cd regolith
 python3 -m venv .venv && source .venv/bin/activate      # Windows: .venv\Scripts\activate
 pip install -r backend/requirements.txt
 cd backend && uvicorn app:app --reload
@@ -29,7 +29,7 @@ straight after cloning.
 
 To try it, choose a deposit type under **1 · Field reading**, press **Simulate**, then **Find match**.
 Simulate fills the form with a real measurement plus its instrument error bars and places you
-100–400 m from it. Rock Match should find the source rock.
+100–400 m from it. Regolith should find the source rock.
 
 ### Rebuild the dataset from the original sources (optional)
 
@@ -63,8 +63,8 @@ backend/
   data/grs_maps.json        Mars Odyssey GRS element maps (Cl, Fe, Si, K, Th, H2O; 5° cells)
   data/raw/                 downloaded source files (git-ignored)
   tests/                    pytest suite
-frontend/                   Rock Match web app (map, deposits explorer, 3D model viewer, charts)
-mars-globe/                 3D Mars globe; embedded in Rock Match and also works standalone
+frontend/                   Regolith web app (map, deposits explorer, 3D model viewer, charts)
+mars-globe/                 3D Mars globe; embedded in Regolith and also works standalone
 ```
 
 ## Data sources

@@ -1,4 +1,4 @@
-// SVG charts for Rock Match. Mark specs follow the dataviz guide: 2px lines, 8px markers with a
+// SVG charts for Regolith. Mark specs follow the dataviz guide: 2px lines, 8px markers with a
 // 2px surface ring, solid hairline grid, text in ink tokens (never series colours), hover + focus tooltips.
 const NS = 'http://www.w3.org/2000/svg';
 const token = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();

@@ -1,4 +1,4 @@
-"""Rock Match backend (FastAPI).
+"""Regolith backend (FastAPI).
 
 Data: 2,900+ APXS measurements from Curiosity, Spirit and Opportunity (NASA PDS + CSA),
 built by scripts/build_dataset.py into data/*.json.
@@ -21,7 +21,7 @@ API
   POST /api/models, GET /api/models    upload / list 3D models
   POST /api/photos                     upload a rock photo
 
-Pages: /  (Rock Match)   /globe/  (3D Mars globe, also works standalone)
+Pages: /  (Regolith)   /globe/  (3D Mars globe, also works standalone)
 Run:   cd backend && uvicorn app:app --reload
 """
 from __future__ import annotations
@@ -136,7 +136,7 @@ def nearest_earth_ref(chem: dict) -> dict | None:
 
 # --------------------------------------------------------------------------- app
 
-app = FastAPI(title="Rock Match API", version="2.0")
+app = FastAPI(title="Regolith API", version="2.0")
 app.add_middleware(GZipMiddleware, minimum_size=1024)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["GET", "POST"], allow_headers=["*"])
 

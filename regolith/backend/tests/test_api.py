@@ -192,7 +192,7 @@ def test_match_validation(client, body):
 
 def test_pages(client):
     assert client.get("/").status_code == 200
-    assert "Rock Match" in client.get("/").text
+    assert "Regolith" in client.get("/").text
     g = client.get("/globe", follow_redirects=False)
     assert g.status_code in (307, 308)
     assert client.get("/globe/").status_code == 200

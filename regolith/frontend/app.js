@@ -265,7 +265,7 @@ $('sim-btn').addEventListener('click', async () => {
     S.simulated = rock;
     $('sim-note').replaceChildren(h('div', { class: 'sim-note' },
       'Simulated from a real measurement — ', h('b', {}, rock.name), ` (${rock.rover}, sol ${rock.sol}) — with its instrument error bars added, `,
-      `and you are standing ${Math.round(d)} m away. Rock Match should recognise it.`));
+      `and you are standing ${Math.round(d)} m away. Regolith should recognise it.`));
   } catch (e) {
     $('sim-note').replaceChildren(h('div', { class: 'sim-note' }, `Could not simulate: ${e.message}`));
   }
