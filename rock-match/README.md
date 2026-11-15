@@ -18,6 +18,7 @@ The APXS instrument was built by the **Canadian Space Agency**. Rock Match uses 
 ## Quick start
 
 ```bash
+cd rock-match
 python3 -m venv .venv && source .venv/bin/activate      # Windows: .venv\Scripts\activate
 pip install -r backend/requirements.txt
 cd backend && uvicorn app:app --reload

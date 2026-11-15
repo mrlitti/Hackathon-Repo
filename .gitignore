@@ -1,7 +1,7 @@
 .venv/
 __pycache__/
-backend/uploads/*
-!backend/uploads/.gitkeep
+rock-match/backend/uploads/*
+!rock-match/backend/uploads/.gitkeep
 .DS_Store
-backend/data/raw/
-backend/data/cache/
+rock-match/backend/data/raw/
+rock-match/backend/data/cache/
