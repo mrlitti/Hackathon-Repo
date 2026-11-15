@@ -45,6 +45,8 @@ from pydantic import BaseModel, Field  # noqa: E402
 
 from rockmatch.chemistry import (CLASS_BY_ID, CLASS_FAMILY, DEPOSIT_CLASSES, ELEMENTS, MAP_VIEWS,  # noqa: E402
                                  OTHER_COLOR, OXIDES, SLOT_COLORS, classify, clean_chemistry)
+from rockmatch.context import explain  # noqa: E402
+from rockmatch.elements import CATALOG as ELEMENT_CATALOG, catalog as element_catalog, element_map  # noqa: E402
 from rockmatch.geo import distance_m  # noqa: E402
 from rockmatch.match import Matcher, similarity_pct, verdict  # noqa: E402
 from rockmatch.net import http_get  # noqa: E402
@@ -91,6 +93,9 @@ class Store:
         self.earth_refs: list[dict] = _load("earth_refs.json", {}).get("references", [])
         self.ref_by_id = {r["id"]: r for r in self.earth_refs}
         self.matcher = Matcher(self.rocks) if self.rocks else None
+        grs_doc = _load("grs_maps.json", {})
+        self.grs: dict = grs_doc.get("maps", {})
+        self.grs_meta = {k: grs_doc.get(k) for k in ("source", "url", "note")}
         # "typical Mars": the median of every APXS measurement, used to normalise chemistry charts
         self.reference = {}
         for el in ELEMENTS:
@@ -227,6 +232,7 @@ def get_rock(rock_id: str):
             if site else None,
             "similar": [{**summary(m["rock"]), "similarity": m["similarity"]} for m in similar],
             "earth_ref": nearest_earth_ref(rock["chemistry"]),
+            "context": explain(rock["deposit"], rock["chemistry"], store.reference, rock["rover"], rock["sol"]),
             "has_spectrum": "rsp" in rock.get("source", {})}
 
 
@@ -276,6 +282,18 @@ def get_deposit(dep_id: str):
             "rocks": [summary(store.by_id[m]) for m in d["members"] if m in store.by_id]}
 
 
+@app.get("/api/elements")
+def elements():
+    return {"elements": element_catalog(store.rocks, store.grs), "grs_source": store.grs_meta}
+
+
+@app.get("/api/elements/{key}")
+def element(key: str, pct: float = Query(75, ge=50, le=99)):
+    if key not in ELEMENT_CATALOG:
+        raise HTTPException(404, f"Unknown element '{key}'. Options: {', '.join(ELEMENT_CATALOG)}")
+    return element_map(key, pct, store.rocks, store.grs, store.grs_meta)
+
+
 @app.get("/api/traverses")
 def traverses():
     return store.traverses
@@ -312,7 +330,7 @@ def match(req: MatchRequest):
     n_close = store.matcher.count_within(chem, 0.6, exclude=exclude)
     result = {
         "query": {"chemistry": chem, "class": cid, "reason": why, "class_info": CLASS_BY_ID[cid],
-                  "elements_used": sorted(chem)},
+                  "elements_used": sorted(chem), "context": explain(cid, chem, store.reference)},
         "matches": [{**summary(h["rock"]), "chemistry": h["rock"]["chemistry"], "similarity": h["similarity"],
                      "chem_distance": h["chem_distance"], "distance_m": h.get("distance_m")} for h in hits],
         "verdict": verdict(cid, hits, n_close, store.class_counts.get(cid, 0), len(store.rocks)),

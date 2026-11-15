@@ -68,6 +68,8 @@ CSA = "https://donnees-data.asc-csa.gc.ca/users/OpenData_DonneesOuvertes/pub/APX
 CSA_PORTAL = "https://data.asc-csa.gc.ca/en/dataset/4596426-1c8f-3l9j-895mmct858mg42"
 JPL_MSL = "https://mars.nasa.gov/mmgis-maps/MSL/Layers/json"
 WUSTL_MER = "https://an.rsl.wustl.edu/mera/AN/meri/MER/traverse"
+PDS_GRS = "https://pds-geosciences.wustl.edu/ody/ody-m-grs-5-elements-v1/odgm_xxxx"
+GRS_MAPS = ("cl", "fe", "h2o", "k", "si", "th")
 
 
 # --------------------------------------------------------------------------- http
@@ -255,10 +257,24 @@ def fetch_traverses(manifest: dict) -> None:
                                       "license": "NASA PDS Geosciences Node", **s}
 
 
+def fetch_grs(manifest: dict) -> None:
+    print("\n[7/7] NASA PDS - Mars Odyssey Gamma Ray Spectrometer element maps (5x5 deg, smoothed)")
+    d = RAW / "pds_ody_grs"
+    jobs = [(f"{PDS_GRS}/data/smoothed/{e}_sr_5x5.{ext}", d / f"{e}_sr_5x5.{ext}") for e in GRS_MAPS for ext in ("tab", "lbl")]
+    jobs += [(f"{PDS_GRS}/aareadme.txt", d / "aareadme.txt"), (f"{PDS_GRS}/catalog/dataset.cat", d / "dataset.cat")]
+    s = download_many(jobs, "GRS", 4)
+    manifest["pds_ody_grs"] = {"url": f"{PDS_GRS}/", "license": "NASA PDS - public domain",
+                               "citation": "Boynton et al. (2007), JGR 112, E12S99; ODY-M-GRS-5-ELEMENTS-V1.0", **s}
+
+
+STEPS = {"mer": fetch_mer, "tables": fetch_msl_tables, "csa": None, "rdr": None, "traverses": fetch_traverses, "grs": fetch_grs}
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--no-spectra", action="store_true", help="skip the MSL *rsp*.csv X-ray spectra")
     ap.add_argument("--workers", type=int, default=6, help="parallel downloads per server (default 6)")
+    ap.add_argument("--only", choices=sorted(STEPS), help="run a single step, e.g. --only grs")
     args = ap.parse_args()
     spectra = not args.no_spectra
     RAW.mkdir(parents=True, exist_ok=True)
@@ -266,11 +282,19 @@ def main() -> None:
     manifest = json.loads(manifest_path.read_text()) if manifest_path.exists() else {}
     t0 = time.time()
 
-    fetch_mer(manifest)
-    fetch_msl_tables(manifest)
-    fetch_csa(manifest, args.workers, spectra)
-    fetch_msl_rdr(manifest, args.workers, spectra)
-    fetch_traverses(manifest)
+    run = lambda name: args.only in (None, name)  # noqa: E731
+    if run("mer"):
+        fetch_mer(manifest)
+    if run("tables"):
+        fetch_msl_tables(manifest)
+    if run("csa"):
+        fetch_csa(manifest, args.workers, spectra)
+    if run("rdr"):
+        fetch_msl_rdr(manifest, args.workers, spectra)
+    if run("traverses"):
+        fetch_traverses(manifest)
+    if run("grs"):
+        fetch_grs(manifest)
 
     manifest["_retrieved_utc"] = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
     manifest_path.write_text(json.dumps(manifest, indent=2))

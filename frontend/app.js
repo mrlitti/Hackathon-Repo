@@ -66,6 +66,10 @@ window.addEventListener('message', (e) => {
   } else if (m.type === 'rm:position') {
     setPosition(m.lat, m.lon, false);
     setPicking(false);
+  } else if (m.type === 'rm:element') {
+    $('m-elem').value = m.key || '';
+    $('m-pct').value = 100 - (m.pct || 75);
+    syncElementTools();
   } else if (m.type === 'rm:view') {
     S.view = m.view;
     if (S.result) renderResult(S.result);
@@ -76,6 +80,28 @@ globe.addEventListener('load', () => {
   // the globe announces itself when its APXS layer is ready; ask again in case we missed it
   setTimeout(() => { if (!S.globeReady) globe.contentWindow.postMessage({ type: 'rm:ping' }, location.origin); }, 3000);
 });
+
+/* ====================================================================== element map tools */
+async function buildElementTools() {
+  try {
+    const { elements } = await api('/elements');
+    const opt = (e) => h('option', { value: e.key }, `${e.label} (${e.key}) — ${e.grs && e.apxs_count ? 'orbit + rocks' : e.grs ? 'orbit only' : 'rocks only'}`);
+    $('m-elem').replaceChildren(h('option', { value: '' }, 'Off'),
+      h('optgroup', { label: 'Orbit (Mars Odyssey GRS) + rocks' }, ...elements.filter((e) => e.grs).map(opt)),
+      h('optgroup', { label: 'Rocks (APXS) only' }, ...elements.filter((e) => !e.grs).map(opt)));
+  } catch { /* element maps unavailable */ }
+}
+function syncElementTools() {
+  $('m-pct-wrap').hidden = !$('m-elem').value;
+  $('m-pct-val').textContent = `${$('m-pct').value}%`;
+}
+function sendElement() {
+  syncElementTools();
+  toGlobe({ type: 'rm:element', key: $('m-elem').value || null, pct: 100 - +$('m-pct').value });
+}
+$('m-elem').addEventListener('change', sendElement);
+$('m-pct').addEventListener('input', syncElementTools);
+$('m-pct').addEventListener('change', sendElement);
 
 /* ====================================================================== tabs */
 const tabs = [...document.querySelectorAll('[role="tab"]')];
@@ -113,6 +139,7 @@ async function boot() {
     $('status').lastElementChild.textContent = `backend online · data built ${String(health.generated_utc || '').slice(0, 10)}`;
     renderStats(meta);
     buildSimulator();
+    buildElementTools();
     onChemInput();
     const rid = new URLSearchParams(location.search).get('rock');
     if (rid) showDetail(rid);
@@ -328,6 +355,9 @@ function renderResult(res) {
       ` — ${fmtDist(n.distance_m)} away (${n.rover}, sol ${n.sol})`));
   }
   $('facts').replaceChildren(...facts);
+  if (q.context?.why || q.context?.drivers?.length) {
+    $('facts').append(h('div', { class: 'query-why why' }, h('h3', { style: { marginTop: 0 } }, 'Why your reading looks like this'), ...whyBlock(q.context, false)));
+  }
 
   $('matches').replaceChildren(...res.matches.map((m, i) => {
     const li = h('li', { class: 'match', tabindex: 0, 'data-id': m.id, 'aria-label': `${m.name}, ${m.similarity}% similar` },
@@ -366,6 +396,8 @@ async function showDetail(id, { fromMap = false } = {}) {
   if (d.traverse_km != null) bits.push(`${d.traverse_km} km into the traverse`);
   $('d-meta').textContent = bits.join(' · ');
   renderClassChip(d);
+  renderComposition(d.chemistry);
+  $('d-why').replaceChildren(...whyBlock(d.context || {}));
   markActive();
   renderSpider();
   renderValues();
@@ -376,10 +408,16 @@ async function showDetail(id, { fromMap = false } = {}) {
 }
 
 function renderClassChip(d) {
-  const kids = [h('span', { class: 'chip' }, dot(classColor(d.deposit)), d.class.label),
+  const kids = [h('span', { class: 'rover-badge' }, h('i', { style: { background: ROVER_COLOR[d.rover] } }), d.rover),
+    h('span', { class: 'chip' }, dot(classColor(d.deposit)), d.class.label),
     h('span', { class: 'chip' }, `data quality: ${d.quality.tier}`)];
   if (d.site) kids.push(h('span', { class: 'chip' }, `deposit site · ${d.site.count} measurement${d.site.count === 1 ? '' : 's'}`));
-  kids.push(h('div', { class: 'reason', style: { width: '100%' } }, `${d.deposit_reason}. ${d.class.description}`));
+  if (d.note) {
+    const sulfur = /S assumed as SO3/i.test(d.note);
+    kids.push(h('span', { class: 'chip note-chip', title: 'Note from the NASA PDS concentration table' },
+      `NASA note: ${d.note}${sulfur ? ' — APXS reports all sulfur as SO3; values this high with almost no Ca or Mg to form sulfate point to elemental sulfur' : ''}`));
+  }
+  kids.push(h('div', { class: 'reason', style: { width: '100%' } }, `Classified by: ${d.deposit_reason}.`));
   $('d-class').replaceChildren(...kids);
 }
 
@@ -410,23 +448,70 @@ function renderValues() {
   $('chem-table').replaceChildren(h('thead', {}, head), h('tbody', {}, ...rows));
 }
 
+const ROVER_COLOR = { Curiosity: '#ff6a3d', Spirit: '#4fc3f7', Opportunity: '#9ccc65' };
 async function loadPhotos(d) {
   const box = $('d-photos');
-  box.replaceChildren(h('p', { class: 'note' }, 'Loading rover close-ups…'));
+  box.replaceChildren(h('div', { class: 'hero-main' }, h('span', { class: 'tag' }, 'Loading rover close-ups…')));
   try {
     const p = await api(`/rocks/${encodeURIComponent(d.id)}/photos`);
     if (S.detail?.id !== d.id) return;
     if (!p.images?.length) {
-      box.replaceChildren(h('p', { class: 'note' }, p.error ? 'Photo service unavailable right now.' : `No close-up photos found around sol ${d.sol}. `,
-        p.source_page ? h('a', { href: p.source_page, target: '_blank', rel: 'noopener' }, 'Browse that sol') : null));
+      box.replaceChildren(h('p', { class: 'note' }, p.error ? 'Photo service unavailable right now. ' : `No close-up photos found around sol ${d.sol}. `,
+        p.source_page ? h('a', { href: p.source_page, target: '_blank', rel: 'noopener' }, 'Browse NASA images') : null));
       return;
     }
-    box.replaceChildren(...p.images.slice(0, 8).map((im) => h('a', { href: im.url, target: '_blank', rel: 'noopener', title: im.title },
-      h('img', { src: im.thumb, alt: `${im.title} (sol ${im.sol})`, loading: 'lazy' }))),
-    h('p', { class: 'note' }, `Sol ${p.images[0].sol} · ${p.credit}`));
+    const imgs = p.images.slice(0, 8);
+    const main = h('a', { class: 'hero-main', target: '_blank', rel: 'noopener' });
+    const show = (im, btn) => {
+      main.replaceChildren(h('img', { src: im.url, alt: `${im.title} (sol ${im.sol})` }),
+        h('span', { class: 'tag' }, `${d.rover} · sol ${im.sol} · ${p.credit}`),
+        h('span', { class: 'open' }, im.page ? 'Open on NASA ↗' : 'Full size ↗'));
+      main.href = im.page || im.url;
+      thumbs.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', b === btn));
+    };
+    const thumbs = h('div', { class: 'thumbs' });
+    imgs.forEach((im, i) => {
+      const b = h('button', { type: 'button', 'aria-label': `Photo ${i + 1}`, 'aria-pressed': i === 0 }, h('img', { src: im.thumb, alt: '', loading: 'lazy' }));
+      b.addEventListener('click', () => show(im, b));
+      thumbs.append(b);
+    });
+    box.replaceChildren(main, imgs.length > 1 ? thumbs : '');
+    show(imgs[0], thumbs.firstElementChild);
   } catch (e) {
     box.replaceChildren(h('p', { class: 'note' }, `Photos unavailable: ${e.message}`));
   }
+}
+
+/* composition: one whole split into the major oxides (tall segmented bar, <= 6 parts) */
+const SEG_PARTS = [['SiO2', '#3987e5'], ['FeO', '#d95926'], ['SO3', '#199e70'], ['CaO', '#c98500'], ['MgO', '#d55181']];
+function renderComposition(chem) {
+  const total = ORDER.filter((e) => !TRACE.has(e)).reduce((a, e) => a + (chem[e] || 0), 0) || 1;
+  const parts = SEG_PARTS.map(([el, color]) => ({ el, color, v: chem[el] || 0 }));
+  parts.push({ el: 'Other', color: css('--muted'), v: Math.max(0, total - parts.reduce((a, p) => a + p.v, 0)) });
+  const bar = $('d-segbar');
+  bar.setAttribute('aria-label', parts.map((p) => `${p.el} ${(100 * p.v / total).toFixed(0)}%`).join(', '));
+  bar.replaceChildren(...parts.filter((p) => p.v > 0).map((p) => {
+    const pct = 100 * p.v / total;
+    const label = `${p.el} ${pct.toFixed(0)}%`;
+    return h('span', { class: pct * 3.6 < label.length * 7 + 12 ? 'dim' : '', style: { flex: `${p.v} 1 0`, background: p.color }, title: `${p.el}: ${fmtValue(p.el, p.v)} wt% (${pct.toFixed(1)}%)` }, label);
+  }));
+  $('d-seglegend').replaceChildren(...parts.map((p) => h('span', {}, h('i', { style: { background: p.color } }), `${p.el} ${p.el === 'Other' ? p.v.toFixed(1) : fmtValue(p.el, p.v)} wt%`)));
+}
+
+/* why: likely formation + element drivers + region + NASA links */
+function whyBlock(ctx, region = true) {
+  const kids = [];
+  if (ctx.why) kids.push(h('p', {}, ctx.why));
+  if (ctx.drivers?.length) {
+    kids.push(h('div', { class: 'drivers' }, ...ctx.drivers.map((d) => h('div', { class: 'driver' },
+      h('b', {}, d.element),
+      h('span', { class: `ratio ${d.direction}`, title: `${fmtValue(d.element, d.value)} ${d.unit} vs typical Mars` }, `${d.ratio}×`),
+      h('span', {}, d.why)))));
+  }
+  if (region && ctx.region) kids.push(h('div', { class: 'region' }, h('b', {}, `📍 ${ctx.region.name}`), h('span', {}, ctx.region.note)));
+  if (ctx.links?.length) kids.push(h('ul', { class: 'nasa-links' }, ...ctx.links.map((l) => h('li', {}, h('a', { href: l.url, target: '_blank', rel: 'noopener' }, l.title)))));
+  if (ctx.caveat) kids.push(h('div', { class: 'caveat' }, ctx.caveat));
+  return kids;
 }
 
 async function loadSpectrum(d) {

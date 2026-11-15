@@ -25,3 +25,4 @@ def fast_distance_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float
     x = math.radians(wrap_lon(lon2 - lon1)) * math.cos(math.radians((lat1 + lat2) / 2))
     y = math.radians(lat2 - lat1)
     return MARS_RADIUS_M * math.hypot(x, y)
+

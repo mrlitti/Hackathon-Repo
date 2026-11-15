@@ -15,7 +15,7 @@ from pathlib import Path
 from .net import dir_listing, http_json
 
 MSL_API = "https://mars.nasa.gov/api/v1/raw_image_items/"
-MSL_PAGE = "https://science.nasa.gov/mission/msl-curiosity/raw-images/"
+MSL_PAGE = "https://science.nasa.gov/mission/msl-curiosity/"
 MER_BROWSE = {
     "Opportunity": "https://pds-imaging.jpl.nasa.gov/data/mer/opportunity/mer1mo_0xxx/browse",
     "Spirit": "https://pds-imaging.jpl.nasa.gov/data/mer/spirit/mer2mo_0xxx/browse",
@@ -39,7 +39,9 @@ def _msl(sol: int, limit: int) -> list[dict]:
              and (it.get("extended") or {}).get("sample_type") != "thumbnail" and it.get("https_url")]
     items.sort(key=rank)
     return [{"url": it["https_url"], "thumb": it["https_url"], "title": it.get("title") or f"Sol {sol} MAHLI",
-             "date": it.get("date_taken"), "sol": sol} for it in items[:limit]]
+             "date": it.get("date_taken"), "sol": sol,
+             "page": f"https://mars.nasa.gov/raw_images/{it['id']}?site=msl" if it.get("id") else None}
+            for it in items[:limit]]
 
 
 def _mer(rover: str, sol: int, limit: int) -> list[dict]:
@@ -68,8 +70,10 @@ def rover_photos(rover: str, sol: int, cache_dir: Path, limit: int = 8) -> dict:
         images = _msl(s, limit) if rover == "Curiosity" else _mer(rover, s, limit)
         if images:
             break
-    page = (f"{MSL_PAGE}?begin_sol={sol}&end_sol={sol}" if rover == "Curiosity"
-            else f"{MER_BROWSE[rover]}/sol{sol:04d}/edr/")
+    if rover == "Curiosity":
+        page = (images[0].get("page") if images else None) or MSL_PAGE
+    else:
+        page = f"{MER_BROWSE[rover]}/sol{sol:04d}/edr/"
     result = {"rover": rover, "sol": sol, "images": images, "credit": CREDITS[rover], "source_page": page,
               "fetched": int(time.time())}
     cache.write_text(json.dumps(result))

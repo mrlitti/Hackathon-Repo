@@ -240,3 +240,48 @@ def test_transparent_png_is_valid():
     import app as app_module
     png = app_module.TRANSPARENT_PNG
     assert png.startswith(b"\x89PNG\r\n\x1a\n") and png.endswith(b"IEND\xaeB`\x82")
+
+
+# ------------------------------------------------------------------ explanations
+
+def test_rock_context_explains_chemistry(client, rocks):
+    homestake = find(rocks, "Opportunity", "Homestake")
+    ctx = client.get(f"/api/rocks/{homestake['id']}").json()["context"]
+    assert "groundwater" in ctx["why"].lower()
+    els = {d["element"]: d for d in ctx["drivers"]}
+    assert els["SO3"]["direction"] == "up" and els["SO3"]["ratio"] > 2
+    assert ctx["region"]["name"].startswith("Endeavour")
+    assert all(l["url"].startswith("https://") and ("nasa.gov" in l["url"]) for l in ctx["links"])
+
+
+def test_match_query_has_context(client):
+    res = client.post("/api/match", json={"chemistry": {"SiO2": 90, "FeO": 1.5, "MgO": 2.3, "Al2O3": 1.7, "CaO": 0.7}}).json()
+    assert res["query"]["context"]["why"] and res["query"]["context"]["links"]
+
+
+# ------------------------------------------------------------------ element concentration maps
+
+def test_element_catalog(client):
+    els = {e["key"]: e for e in client.get("/api/elements").json()["elements"]}
+    assert els["Cl"]["grs"] and els["Cl"]["apxs_count"] > 2000
+    assert els["Th"]["grs"] and els["Th"]["apxs_count"] == 0 and els["Th"]["grs_unit"] == "ppm"
+    assert not els["Mn"]["grs"] and els["Mn"]["apxs_field"] == "MnO"
+
+
+def test_chlorine_map_matches_nasa_tables(client):
+    m = client.get("/api/elements/Cl", params={"pct": 90}).json()
+    g, a = m["grs"], m["apxs"]
+    assert g["unit"] == "wt%" and g["n"] == 1508 and abs(g["max"] - 0.797) < 1e-9 and abs(g["min"] - 0.216) < 1e-9
+    assert all(abs(c[0]) <= 57.5 for c in g["cells"])             # non-radioactive maps are masked at the poles
+    assert g["n_high"] == sum(1 for c in g["cells"] if c[2] >= g["threshold"])
+    assert a["n_high"] == sum(1 for _, v in a["values"] if v >= a["threshold"])
+    top = a["hotspots"][0]
+    assert top["top_name"] == "Kythira" and abs(top["max"] - 19.75) < 1e-9
+    for h in a["hotspots"]:
+        assert all(v >= a["threshold"] for i, v in a["values"] if i in h["ids"])
+
+
+def test_element_validation(client):
+    assert client.get("/api/elements/Xx").status_code == 404
+    assert client.get("/api/elements/Cl", params={"pct": 30}).status_code == 422
+    assert client.get("/api/elements/H2O").json()["apxs"] is None

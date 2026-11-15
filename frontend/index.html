@@ -35,6 +35,15 @@
         <div class="tabpanel" id="tab-map" role="tabpanel" aria-labelledby="tabbtn-map">
           <iframe id="globe" title="3D Mars globe with every APXS measurement" src="/globe/?embed=1"></iframe>
           <div class="map-hint" id="map-hint" hidden>Click your position on the globe</div>
+          <div class="map-tools" role="group" aria-label="Element concentration map">
+            <label for="m-elem">Element map</label>
+            <select id="m-elem"><option value="">Off</option></select>
+            <span id="m-pct-wrap" hidden>
+              <label for="m-pct">top</label>
+              <input type="range" id="m-pct" min="1" max="50" step="1" value="25">
+              <span id="m-pct-val">25%</span>
+            </span>
+          </div>
         </div>
 
         <div class="tabpanel" id="tab-deposits" role="tabpanel" aria-labelledby="tabbtn-deposits" hidden>
@@ -109,8 +118,13 @@
       <section class="card" id="card-detail" aria-labelledby="d-title" hidden>
         <header class="card-h"><span class="step">3</span><h2 id="d-title">Rock detail</h2></header>
         <div class="d-meta" id="d-meta"></div>
+        <div class="hero" id="d-photos"></div>
         <div class="chip-row" id="d-class"></div>
-        <div class="photos" id="d-photos"></div>
+        <h3>Composition</h3>
+        <div class="segbar" id="d-segbar" role="img"></div>
+        <div class="seg-legend" id="d-seglegend"></div>
+        <h3>Why this chemistry?</h3>
+        <div class="why" id="d-why"></div>
         <h3 id="spider-title">Chemistry vs typical Mars</h3>
         <div class="legend" id="spider-legend"></div>
         <div class="chart" id="spider"></div>

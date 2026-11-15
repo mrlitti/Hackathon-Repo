@@ -270,6 +270,7 @@ def build_msl(report: list[str]) -> tuple[list[dict], list[list]]:
             "quality": {"tier": msl_quality(life, fwhm, norm), "lifetime_h": life, "fwhm_ev": fwhm,
                         "norm_pct": norm, "sensor_temp_c": fnum(r.get("sh_tavg"))},
             "deposit": cls, "deposit_reason": why,
+            "note": (r.get("Notes") or "").strip() or None,     # e.g. "S assumed as SO3" (elemental sulfur)
             "source": source,
         })
     report.append(f"Curiosity: {len(rocks)} measurements kept; {linked} linked to rwp/rsp files "
@@ -427,6 +428,40 @@ def build_earth_refs(report: list[str]) -> list[dict]:
     return refs
 
 
+# =========================================================================== orbital element maps (Odyssey GRS)
+
+GRS_ELEMENTS = {"Cl": ("cl", "Chlorine"), "Fe": ("fe", "Iron"), "Si": ("si", "Silicon"), "K": ("k", "Potassium"),
+                "Th": ("th", "Thorium"), "H2O": ("h2o", "Water-equivalent hydrogen")}
+GRS_UNITS = {"WEIGHT PERCENT": "wt%", "PARTS PER MILLION": "ppm"}
+
+
+def build_grs(report: list[str]) -> dict:
+    d = RAW / "pds_ody_grs"
+    out = {}
+    if not d.exists():
+        report.append("Odyssey GRS maps: not downloaded (run fetch_data.py --only grs)")
+        return out
+    for key, (code, label) in GRS_ELEMENTS.items():
+        lbl = (d / f"{code}_sr_5x5.lbl").read_text(errors="replace")
+        units = re.findall(r'UNIT\s*=\s*"([^"]+)"', lbl)
+        unit = GRS_UNITS.get(units[2] if len(units) > 2 else "", "wt%")      # column 3 = concentration
+        cells = []
+        for line in (d / f"{code}_sr_5x5.tab").read_text().splitlines():
+            parts = line.split()
+            if len(parts) < 4:
+                continue
+            lat, lon, conc, sig = (float(x) for x in parts[:4])
+            if conc >= 9999 or lon > 360:
+                continue
+            cells.append([lat, wrap_lon(lon), conc, None if sig >= 9999 else sig])
+        vals = sorted(c[2] for c in cells)
+        out[key] = {"label": label, "unit": unit, "file": f"{code}_sr_5x5.tab", "cells": cells,
+                    "min": vals[0], "max": vals[-1], "median": vals[len(vals) // 2],
+                    "lat_range": [min(c[0] for c in cells), max(c[0] for c in cells)]}
+        report.append(f"Odyssey GRS {label}: {len(cells)} cells, {vals[0]:.3f}-{vals[-1]:.3f} {unit}")
+    return out
+
+
 # =========================================================================== deposits
 
 def cluster_deposits(rocks: list[dict]) -> list[dict]:
@@ -493,6 +528,7 @@ def main() -> None:
     mer, mer_paths = build_mer(report)
     rocks = msl + mer
     refs = build_earth_refs(report)
+    grs = build_grs(report)
     deposits = cluster_deposits(rocks)
 
     cls_counts = Counter(r["deposit"] for r in rocks)
@@ -525,6 +561,13 @@ def main() -> None:
     (OUT / "deposits.json").write_text(json.dumps({"cluster_m": CLUSTER_M, "deposits": deposits}, separators=(",", ":")))
     (OUT / "traverses.json").write_text(json.dumps({"Curiosity": msl_path, **mer_paths}, separators=(",", ":")))
     (OUT / "earth_refs.json").write_text(json.dumps({"source": CITATIONS["CSA"], "references": refs}, indent=1))
+    (OUT / "grs_maps.json").write_text(json.dumps({
+        "source": "Mars Odyssey Gamma Ray Spectrometer element concentration maps, 5x5 degree bins smoothed with a "
+                  "boxcar filter (ODY-M-GRS-5-ELEMENTS-V1.0, NASA PDS Geosciences Node). Boynton et al. (2007), JGR 112, E12S99.",
+        "url": "https://pds-geosciences.wustl.edu/ody/ody-m-grs-5-elements-v1/",
+        "note": "Gamma rays sample roughly the top few tens of centimetres. Non-radioactive elements are masked poleward "
+                "of ~60 degrees because of polar hydrogen and CO2 frost.",
+        "maps": grs}, separators=(",", ":")))
 
     print("\n".join(report))
     print(f"\nTotal: {len(rocks)} measurements, {len(deposits)} deposit sites")
@@ -548,7 +591,7 @@ def main() -> None:
             r = rs[0]
             print(f"  {rover:<11} sol {r['sol']:>4} at {r['lat']:.4f},{r['lon']:.4f}  ~{label} ({lat},{lon}): "
                   f"{fast_distance_m(r['lat'], r['lon'], lat, lon) / 1000:.1f} km apart")
-    for f in ("apxs_rocks.json", "deposits.json", "traverses.json", "earth_refs.json"):
+    for f in ("apxs_rocks.json", "deposits.json", "traverses.json", "earth_refs.json", "grs_maps.json"):
         print(f"wrote {OUT / f} ({(OUT / f).stat().st_size / 1e6:.2f} MB)")
 
 
